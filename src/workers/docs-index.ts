@@ -87,13 +87,7 @@ function computeContentHash(
     // leaves a package cached whenever a fix moves some OTHER module — the
     // wrapped `instance` head is in aeson's `Types/FromJSON.hs`, never its entry
     // — and nothing surfaced the duplicate drop in `ingestBody` at all.
-    hash.update(
-        Buffer.from(
-            `${String(profile.surface)}\u0000${profile.contentFingerprint()}`
-                + `\u0000${String(ingestBody)}`,
-            'utf8'
-        )
-    )
+    hash.update(Buffer.from(`${String(profile.surface)}\u0000${String(ingestBody)}`, 'utf8'))
     hash.update(ZERO_SEP)
     // Which packages were folded in, so gaining or losing one re-indexes — and the
     // rule that decides WHICH of their chunks are kept, by source. Hashing the set
@@ -101,6 +95,9 @@ function computeContentHash(
     // the chunks the old rule chose.
     hash.update(Buffer.from(supplements.map(s => `${s.name}@${s.version}`).join('\u0000'), 'utf8'))
     hash.update(ZERO_SEP)
+    hash.update(
+        Buffer.from(profile.exportGapFingerprint?.() ?? String(profile.exportGap ?? ''), 'utf8')
+    )
     hash.update(ZERO_SEP)
     if (pkg.entry && fs.existsSync(pkg.entry)) {
         try {
