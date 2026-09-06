@@ -441,8 +441,23 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
     box-sizing: border-box;
 }
 #input { flex: 1; min-width: 0; }
-#send-btn.running {
-    color: rgb(var(--mdui-color-error));
+/* Expressive send button: tonal circle; send<->stop swings 90deg on the
+   spring token, and the running/armed states bridge the tonal color tokens
+   to the error palette. */
+mdui-button-icon#send-btn {
+    transform: rotate(var(--send-rot, 0deg));
+}
+mdui-button-icon#send-btn:active {
+    transform: rotate(var(--send-rot, 0deg)) scale(0.93);
+}
+mdui-button-icon#send-btn.running {
+    --send-rot: 90deg;
+    --mdui-color-secondary-container: var(--mdui-color-error-container);
+    --mdui-color-on-secondary-container: var(--mdui-color-on-error-container);
+}
+mdui-button-icon#send-btn.armed {
+    --mdui-color-secondary-container: var(--mdui-color-error);
+    --mdui-color-on-secondary-container: var(--mdui-color-on-error);
 }
 #reconnect-overlay {
     position: fixed; inset: 0;
@@ -741,9 +756,9 @@ export function mduiHtml(wsUrl: string): string {
 
     <footer id="input-bar" style="position:relative;">
       <div id="cmd-suggestions"></div>
-      <mdui-text-field id="input" variant="outlined" autosize min-rows="1" max-rows="6"
+      <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
-      <mdui-button-icon id="send-btn" icon="send" disabled aria-label="发送"></mdui-button-icon>
+      <mdui-button-icon id="send-btn" variant="tonal" icon="send" disabled aria-label="发送"></mdui-button-icon>
     </footer>
   </div>
 
@@ -764,7 +779,7 @@ export function mduiHtml(wsUrl: string): string {
       <div class="rec-label">推荐答案</div>
       <div class="rec-text" id="prompt-rec-text"></div>
     </div>
-    <mdui-text-field id="prompt-input" variant="outlined" autosize min-rows="3" max-rows="8"
+    <mdui-text-field id="prompt-input" variant="filled" autosize min-rows="3" max-rows="8"
       placeholder="输入你的回答…" style="display:none"></mdui-text-field>
     <div slot="action" class="row" id="prompt-buttons"></div>
   </mdui-dialog>
