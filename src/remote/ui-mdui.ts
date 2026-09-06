@@ -93,10 +93,9 @@ m3e-icon-button#send-btn:active {
 :root {
     color-scheme: light dark;
     --chat-max-width: 920px;
-    /* Two type faces only: the platform's UI font for everything people
-       read as prose, and the platform's monospace for anything that is
-       code, an identifier, or machine output. */
-    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* One deliberate face: the platform monospace for code blocks and
+       terminal-style output. Everything else sets no font-family at all
+       and rides the browser's system default. */
     --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
     /* Bridge the MD tokens the m3e buttons consume onto the mdui palette,
        so both libraries follow one theme (light/dark included). */
@@ -122,7 +121,7 @@ html, body {
     overflow: hidden;
     background: rgb(var(--mdui-color-surface));
     color: rgb(var(--mdui-color-on-surface));
-    font-family: var(--font-sans);
+    font-family: system-ui, sans-serif;
 }
 /* Native scrollbars are hidden app-wide — scrolling surfaces get the
    custom .scroll-thumb overlay instead (see attachScrollbar in the client:
@@ -253,20 +252,28 @@ html, body {
 }
 #ctx-stack.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
 #ctx-stack m3e-linear-progress-indicator { display: block; width: 100%; }
-/* The wavy layer lives on top and crossfades with agent activity. */
+/* The wavy layer lives on top; the two layers crossfade exclusively so
+   the flat fill never lingers under the rolling wave. */
 #ctx-bar {
     position: absolute;
     inset: 0;
     opacity: 0;
     transition: opacity 300ms;
 }
-#ctx-bar.live { opacity: 1; }
+#ctx-bar-flat { transition: opacity 300ms; }
+#ctx-stack.live #ctx-bar { opacity: 1; }
+#ctx-stack.live #ctx-bar-flat { opacity: 0; }
 /* The top-app-bar is absolutely positioned inside this wrapper (its
    scroll-target mode requires a relative, overflow-hidden parent) and the
    chat scrolls beneath it. */
 #chat-wrap { position: relative; min-height: 0; display: flex; overflow: hidden; }
 #chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
-    padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+    /* mdui-top-app-bar writes its padding-top inline once at init — before
+       the wavy line has laid out — so the first message ends up tucked
+       under the bar. Own it: full bar height (row + wave) plus air.
+       !important beats the component's inline style. */
+    padding-top: calc(var(--safe-top) + 3.25rem + 10px + 0.5rem) !important; }
 /* The bar paints neutral (matching the #app-bar row); it also must clear
    the notch. mdui tokens are bare RGB triplets — override with triplet
    vars, never rgb()-wrapped values, and never self-referentially (a var
@@ -355,6 +362,7 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
    share a center. */
 .bubble .code-block {
     position: relative;
+    font-family: var(--font-mono);
     --_pill-inset: var(--mdui-shape-corner-extra-small);
     background: rgb(var(--mdui-color-surface-container-lowest));
     border-radius: calc(1rem + var(--_pill-inset));
@@ -403,6 +411,7 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     border-radius: 0;
 }
 .bubble.md pre {
+    font-family: var(--font-mono);
     background: rgb(var(--mdui-color-surface-container-lowest));
     color: rgb(var(--mdui-color-on-surface));
     padding: 0.75em 1em;
@@ -484,10 +493,9 @@ mdui-collapse.thinking.open .thinking-header::before { transform: rotate(45deg) 
 .thinking-body {
     margin: 0;
     padding: 0.5rem 1rem 0.85rem;
-    /* Reasoning prose, not code — the default UI font reads better for the
-       long wrapped paragraphs a thinking block can hold. Set explicitly:
-       the element is a <pre>, whose UA font would otherwise win. */
-    font-family: var(--font-sans);
+    /* Reasoning prose, not code — inherit the system default (explicit
+       because the element is a <pre>, whose UA font would win). */
+    font-family: inherit;
     font-size: 0.82rem;
     line-height: 1.5;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -540,7 +548,6 @@ mdui-collapse.tool-call.error {
 mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift)); }
 .tool-label {
     flex: 1;
-    font-family: var(--font-mono);
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface));
     overflow: hidden;
@@ -550,7 +557,6 @@ mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) tra
 }
 .tool-badge {
     flex-shrink: 0;
-    font-family: var(--font-mono);
     font-size: 0.75rem;
     padding: 0.1rem 0.4rem;
     border-radius: var(--mdui-shape-corner-extra-small);
@@ -771,11 +777,6 @@ mdui-list#notif-list {
     cursor: pointer;
     font-size: 0.9rem;
 }
-/* The command name is an identifier you'll retype — monospace, like the
-   tool labels and code elsewhere. */
-#cmd-suggestions mdui-list-item::part(headline) {
-    font-family: var(--font-mono);
-}
 
 /* Scroll-to-bottom (mdui-fab) */
 m3e-fab#scroll-bottom {
@@ -801,7 +802,6 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     text-align: center;
     font-size: 0.7rem;
     color: rgb(var(--mdui-color-on-surface-variant));
-    font-family: var(--font-mono);
 }
 /* Timestamps are the same kind of metadata whatever the role — the bubbles
    already carry the role color, so all three stay muted. */
@@ -1187,7 +1187,7 @@ function stage0Logic(wsUrl: string): string {
        the agent is actually working. */
     function paintCtxWave() {
       const apply = () => {
-        ctxBar.classList.toggle('live', agentRunning);
+        ctxStack.classList.toggle('live', agentRunning);
         const p = ctxBar.shadowRoot && ctxBar.shadowRoot.querySelector('.primary path');
         if (p) p.style.animationPlayState = agentRunning ? 'running' : 'paused';
       };
