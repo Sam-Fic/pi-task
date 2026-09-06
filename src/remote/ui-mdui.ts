@@ -353,7 +353,13 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     color: rgb(var(--mdui-color-on-primary-container));
     border-top-right-radius: 0.5rem;
 }
-.msg.assistant .bubble { border-top-left-radius: 0.5rem; }
+.msg.assistant .bubble {
+    border-top-left-radius: 0.5rem;
+    /* Concentric with the copy circle that floats in this corner: the 2rem
+       button (radius 1rem) sits 0.15rem inside, so the arc is circle+inset —
+       same math as the code-block/pill pair below. */
+    border-top-right-radius: calc(1rem + 0.15rem);
+}
 
 /* Markdown surface (Stage 1) */
 .bubble.md {
@@ -507,8 +513,13 @@ mdui-collapse.thinking[value] { border-radius: 1.125rem; }
     color: rgb(var(--mdui-color-on-surface-variant));
     font-weight: 500;
     user-select: none;
+    /* Flush child of the collapse (through the collapse-item wrapper, so
+       "inherit" would resolve against that — set the pair explicitly):
+       concentric with gap 0 means equal radii, open state included. */
     border-radius: var(--mdui-shape-corner-medium);
+    transition: border-radius 350ms var(--m3e-spring-fast);
 }
+mdui-collapse.thinking[value] .thinking-header { border-radius: 1.125rem; }
 /* Pure-CSS chevron. An L of side s and stroke t has its centroid
    0.25*(s-t) toward the corner, so the shape is pulled back by that
    amount in its own frame before rotating - the visual mass, not the
@@ -567,8 +578,12 @@ mdui-collapse.tool-call.error {
     gap: 0.5rem;
     font-size: 0.9rem;
     user-select: none;
+    /* Flush child of the collapse — same concentric pair as the thinking
+       header (explicit, since the collapse-item wrapper breaks "inherit"). */
     border-radius: var(--mdui-shape-corner-medium);
+    transition: border-radius 350ms var(--m3e-spring-fast);
 }
+mdui-collapse.tool-call[value] .tool-header { border-radius: 1.125rem; }
 .tool-call .tool-header {
     --_chev-shift: calc((0.4rem - 1.5px) / -4);
 }
@@ -757,14 +772,16 @@ mdui-card#status-panel {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Bell + notif dropdown */
+/* Bell + notif dropdown. Radius matches the model menu — the two are sibling
+   floating panels; its own children (list rows) sit flush and are clipped,
+   so no inner radius constrains it. */
 #notif-panel {
     position: fixed;
     top: calc(var(--safe-top) + 4rem);
     right: 1rem;
     width: 320px; max-height: 60vh;
     background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: var(--mdui-shape-corner-extra-large);
     box-shadow: var(--mdui-elevation-level3);
     padding: 0.5rem;
     display: none;
@@ -797,19 +814,21 @@ mdui-list#notif-list {
 }
 
 /* Model picker menu (opened from the app-bar pill). Same surface recipe as
-   the notif panel: elevated tonal container, no stroke; rows are full-
-   rounded (M3E's pill list shape) and the current model reads as a
-   secondary-container selection rather than a check on a blank row. */
+   the notif panel: elevated tonal container, no stroke. Concentric corners:
+   rows carry --_row-r and the menu pads them by --_menu-pad, so the menu's
+   radius is the sum and every arc shares a center with the row beneath it. */
 #model-menu {
+    --_row-r: 1.25rem;
+    --_menu-pad: 0.5rem;
     position: fixed;
     top: calc(var(--safe-top) + 4rem);
     left: 1rem;
     width: min(320px, calc(100vw - 2rem));
     max-height: 55vh;
     background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: calc(var(--_row-r) + var(--_menu-pad));
     box-shadow: var(--mdui-elevation-level3);
-    padding: 0.5rem;
+    padding: var(--_menu-pad);
     box-sizing: border-box;
     display: none;
     flex-direction: column;
@@ -835,7 +854,7 @@ mdui-list#notif-list {
     align-items: center;
     gap: 0.6rem;
     padding: 0.5rem 0.75rem;
-    border-radius: 999px;
+    border-radius: var(--_row-r);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: background 150ms;
@@ -884,14 +903,16 @@ mdui-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Cmd suggestions (above input) */
+/* Cmd suggestions (above input). Same 28px family as the notif/model panels;
+   the list is flush inside the clip, so the container's radius is the only
+   one that shows. */
 #cmd-suggestions {
     position: absolute;
     bottom: 100%;
     left: var(--col-pad); right: var(--col-pad);
     margin-bottom: 0.25rem;
     background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: var(--mdui-shape-corner-extra-large);
     box-shadow: var(--mdui-elevation-level2);
     overflow: hidden;
     display: none;
@@ -965,9 +986,10 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
 /* Touch devices have no hover — keep the button faintly visible. */
 @media (hover: none) { .bubble-copy { opacity: 0.55; } }
 
-/* Prompt dialog (mdui-dialog).
-   Concentric radii: dialog body padding 24px, dialog corner 28px
-   -> inner elements sit 4px inside their container -> shape-corner-small. */
+/* Prompt dialog (mdui-dialog) in the extra-large corner family (28px).
+   Its inner boxes (rec-panel, text field, buttons) sit mid-content —
+   never corner-aligned with the dialog's arcs — so the concentric rule
+   (outer − inner = gap) does not bind them; they keep their own radii. */
 #prompt-card { --mdui-shape-corner: var(--mdui-shape-corner-extra-large); }
 #prompt-card .q { font-size: 0.95rem; line-height: 1.5; }
 #prompt-card .rec-panel {
