@@ -930,7 +930,7 @@ export function mduiHtml(wsUrl: string): string {
       <div id="cmd-suggestions"></div>
       <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
-      <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send"></m3e-icon></m3e-icon-button>
+      <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
     </footer>
   </div>
 
