@@ -14,7 +14,7 @@ import {
 } from './bridge.js'
 import {setupEvents} from './events.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
-import {html} from './ui.js'
+import {mduiHtml as html} from './ui-mdui.js'
 import {qrLines} from './qr.js'
 import {startServer, formatAddresses} from './server.js'
 import {

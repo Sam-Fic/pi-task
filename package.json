@@ -19,8 +19,8 @@
         "prepublishOnly": "bun run build"
     },
     "peerDependencies": {
-        "@earendil-works/pi-coding-agent": ">=0.80.0",
         "@earendil-works/pi-agent-core": ">=0.80.0",
+        "@earendil-works/pi-coding-agent": ">=0.80.0",
         "@earendil-works/pi-tui": ">=0.80.0"
     },
     "dependencies": {
@@ -42,6 +42,7 @@
         "@types/turndown": "5.0.6",
         "@types/web-push": "3.6.4",
         "@types/ws": "8.18.1",
+        "bun-types": "^1.4.2",
         "cross-env": "10.1.0",
         "eslint": "10.9.1",
         "eslint-config-prettier": "10.1.8",
