@@ -172,9 +172,9 @@ html, body {
 .msg.user .bubble {
     background: rgb(var(--mdui-color-primary-container));
     color: rgb(var(--mdui-color-on-primary-container));
-    border-bottom-right-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
 }
-.msg.assistant .bubble { border-bottom-left-radius: 0.5rem; }
+.msg.assistant .bubble { border-top-left-radius: 0.5rem; }
 
 /* Markdown surface (Stage 1) */
 .bubble.md {
@@ -210,6 +210,50 @@ html, body {
     border-radius: 0.25rem;
     font-family: Consolas, Menlo, "Courier New", monospace;
     font-size: 0.9em;
+}
+/* Code block: nested inside the bubble (outer radius 1rem, bubble padding
+   0.75rem vertical) -> inner radius = shape-corner-small (concentric).
+   Language + copy float as a pill over the top-right corner instead of a
+   full-width header bar, so the code surface stays clean. */
+.bubble .code-block {
+    position: relative;
+    background: rgb(var(--mdui-color-surface-container-lowest));
+    border: 1px solid rgb(var(--mdui-color-outline-variant));
+    border-radius: var(--mdui-shape-corner-small);
+    overflow: hidden;
+    margin: 0.6em 0;
+    font-size: 0.9em;
+}
+.bubble .code-head {
+    position: absolute; top: 0.35rem; right: 0.35rem; z-index: 1;
+    display: flex; align-items: center; gap: 0.15rem;
+    background: rgb(var(--mdui-color-surface-container));
+    border: 1px solid rgb(var(--mdui-color-outline-variant));
+    border-radius: 999px;
+    padding: 0.1rem 0.2rem 0.1rem 0.65rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.bubble .code-block:hover .code-head { opacity: 1; }
+/* Touch devices have no hover — keep the pill faintly visible and icon-only
+   so it never covers the code. */
+@media (hover: none) {
+    .bubble .code-head { opacity: 0.75; }
+    .bubble .code-head .code-lang { display: none; }
+}
+.bubble .code-lang {
+    color: rgb(var(--mdui-color-on-surface-variant));
+    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-size: 0.7rem; letter-spacing: 0.05em;
+}
+.bubble .code-head .copy-btn {
+    font-size: 1rem;
+    width: 1.7rem; height: 1.7rem;
+    color: rgb(var(--mdui-color-on-surface-variant));
+}
+.bubble .code-block pre {
+    margin: 0;
+    border-radius: 0;
 }
 .bubble.md pre {
     background: rgb(var(--mdui-color-surface-container-lowest));
@@ -374,12 +418,14 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
 .avatar {
     width: 2.25rem; height: 2.25rem; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 600; font-size: 0.9rem; flex-shrink: 0;
+    font-size: 1.15rem; flex-shrink: 0;
 }
 .avatar.user      { background: rgb(var(--mdui-color-primary));
     color: rgb(var(--mdui-color-on-primary)); }
 .avatar.assistant { background: rgb(var(--mdui-color-secondary-container));
     color: rgb(var(--mdui-color-on-secondary-container)); }
+.avatar.error     { background: rgb(var(--mdui-color-error-container));
+    color: rgb(var(--mdui-color-on-error-container)); }
 #input-bar {
     display: flex; gap: 0.5rem; align-items: flex-end;
     padding: 0.75rem var(--col-pad) 1rem;
@@ -566,17 +612,22 @@ mdui-fab#scroll-bottom.show:active { transform: scale(0.9) rotate(0deg); }
     box-sizing: border-box;
 }
 
-/* Bubble copy button (mdui-button-icon) */
-.copy-btn {
+/* Copy buttons: the code-block one sits in its header bar (rendered by the
+   markdown module); the message one floats on finished assistant bubbles. */
+.copy-btn { font-size: 1.1rem; }
+.copy-btn.copied { color: rgb(var(--mdui-color-primary)); }
+.bubble-copy {
     position: absolute;
     top: 0.15rem; right: 0.15rem;
     width: 2rem; height: 2rem;
-    font-size: 1.1rem;
+    background: rgb(var(--mdui-color-surface-container-high));
+    border-radius: 999px;
     opacity: 0;
     transition: opacity 0.15s;
 }
-.msg:hover .copy-btn { opacity: 1; }
-.copy-btn.copied { color: rgb(var(--mdui-color-primary)); }
+.msg.assistant:hover .bubble-copy { opacity: 1; }
+/* Touch devices have no hover — keep the button faintly visible. */
+@media (hover: none) { .bubble-copy { opacity: 0.55; } }
 
 /* Prompt dialog (mdui-dialog).
    Concentric radii: dialog body padding 24px, dialog corner 28px
@@ -889,19 +940,36 @@ function stage0Logic(wsUrl: string): string {
     // ───────────── Bubbles (Stage 1: Markdown) ─────────────
     function setContent(el, text) {
       el.classList.add('md');
+      mountMarkdown(el, text);
+    }
+    // The markdown module emits a plain <button class="copy-btn"> in each code
+    // header. Swap it for a real MD3 icon button (state layer, ripple, theme).
+    function mountMarkdown(el, text) {
       el.innerHTML = renderMarkdown(text);
+      el.querySelectorAll('.code-head .copy-btn').forEach((b) => {
+        const icon = document.createElement('mdui-button-icon');
+        icon.type = 'button';
+        icon.className = 'copy-btn';
+        icon.icon = 'content_copy';
+        icon.setAttribute('aria-label', '复制代码');
+        b.replaceWith(icon);
+      });
     }
     function addBubble(role, text) {
       const wrap = document.createElement('div');
       wrap.className = 'msg ' + role;
       const avatar = document.createElement('div');
       avatar.className = 'avatar ' + role;
-      avatar.textContent = role === 'user' ? 'U' : 'π';
+      avatar.innerHTML = role === 'user'
+        ? '<mdui-icon name="person"></mdui-icon>'
+        : role === 'error'
+          ? '<mdui-icon name="error_outline"></mdui-icon>'
+          : '<mdui-icon name="auto_awesome"></mdui-icon>';
       const bub = document.createElement('div');
       bub.className = 'bubble';
       if (role === 'assistant') {
         bub.classList.add('md');
-        bub.innerHTML = renderMarkdown(text);
+        mountMarkdown(bub, text);
         attachBubbleCopy(bub, text);
       } else {
         bub.textContent = text;
@@ -917,7 +985,8 @@ function stage0Logic(wsUrl: string): string {
         const wrap = document.createElement('div');
         wrap.className = 'msg assistant';
         const av = document.createElement('div');
-        av.className = 'avatar assistant'; av.textContent = 'π';
+        av.className = 'avatar assistant';
+        av.innerHTML = '<mdui-icon name="auto_awesome"></mdui-icon>';
         const bub = document.createElement('div');
         bub.className = 'bubble md';
         wrap.appendChild(av); wrap.appendChild(bub);
@@ -931,7 +1000,7 @@ function stage0Logic(wsUrl: string): string {
     }
     function closeBubble() {
       if (currentBubble && streamText) {
-        currentBubble.innerHTML = renderMarkdown(streamText);
+        mountMarkdown(currentBubble, streamText);
         attachBubbleCopy(currentBubble, streamText);
       }
       currentBubble = null; streamText = '';
@@ -942,11 +1011,20 @@ function stage0Logic(wsUrl: string): string {
       b.type = 'button';
       b.className = 'copy-btn bubble-copy';
       b.icon = 'content_copy';
+      b.setAttribute('aria-label', '复制消息');
       el.appendChild(b);
     }
     chatLog.addEventListener('click', (e) => {
       const btn = e.target.closest && e.target.closest('.copy-btn');
       if (!btn) return;
+      // A code-block copy button copies only that block; a bubble copy button
+      // copies the whole message. Both are styled by .copy-btn upstream.
+      const block = btn.closest('.code-block');
+      if (block) {
+        const code = block.querySelector('code');
+        copyText(code ? code.textContent : '', btn);
+        return;
+      }
       const bub = btn.closest('.bubble');
       if (!bub) return;
       copyText(bub.__copyText != null ? bub.__copyText : bub.textContent, btn);
@@ -1652,7 +1730,7 @@ function stage0Logic(wsUrl: string): string {
         case 'text_end':
           if (currentBubble) {
             if (streamText) {
-              currentBubble.innerHTML = renderMarkdown(streamText);
+              mountMarkdown(currentBubble, streamText);
               attachBubbleCopy(currentBubble, streamText);
             }
             currentBubble = null; streamText = '';
@@ -1691,7 +1769,7 @@ function stage0Logic(wsUrl: string): string {
           finalizeThinking();
           if (currentBubble) {
             if (streamText) {
-              currentBubble.innerHTML = renderMarkdown(streamText);
+              mountMarkdown(currentBubble, streamText);
               attachBubbleCopy(currentBubble, streamText);
             }
             currentBubble = null; streamText = '';
