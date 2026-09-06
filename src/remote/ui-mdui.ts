@@ -312,6 +312,7 @@ mdui-collapse.thinking {
 }
 mdui-collapse.thinking[value] { border-radius: 1.125rem; }
 .thinking .thinking-header {
+    display: flex; align-items: center;
     cursor: pointer;
     padding: 0.5rem 0.85rem;
     font-size: 0.85rem;
@@ -320,14 +321,25 @@ mdui-collapse.thinking[value] { border-radius: 1.125rem; }
     user-select: none;
     border-radius: var(--mdui-shape-corner-medium);
 }
-.thinking .thinking-header::before {
-    content: '›';
-    display: inline-block;
-    margin-right: 0.4em;
-    transition: transform 0.15s;
-    color: rgb(var(--mdui-color-on-surface-variant));
+/* Pure-CSS chevron. An L of side s and stroke t has its centroid
+   0.25*(s-t) toward the corner, so the shape is pulled back by that
+   amount in its own frame before rotating - the visual mass, not the
+   box, lands on the flex centerline. */
+.thinking .thinking-header {
+    --_chev-shift: calc((0.4rem - 1.5px) / -4);
 }
-mdui-collapse.thinking[value] .thinking-header::before { transform: rotate(90deg); }
+.thinking .thinking-header::before {
+    content: '';
+    width: 0.4rem; height: 0.4rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg) translate(var(--_chev-shift), var(--_chev-shift));
+    transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 350ms var(--m3e-spring-fast);
+    margin-right: 0.55em;
+    flex-shrink: 0;
+}
+mdui-collapse.thinking.open .thinking-header::before { transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift)); }
 .thinking-body {
     margin: 0;
     padding: 0.5rem 1rem 0.85rem;
@@ -367,14 +379,21 @@ mdui-collapse.tool-call.error {
     user-select: none;
     border-radius: var(--mdui-shape-corner-medium);
 }
+.tool-call .tool-header {
+    --_chev-shift: calc((0.4rem - 1.5px) / -4);
+}
 .tool-call .tool-header::before {
-    content: '›';
-    display: inline-block;
-    transition: transform 0.15s;
-    color: rgb(var(--mdui-color-on-surface-variant));
+    content: '';
+    width: 0.4rem; height: 0.4rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg) translate(var(--_chev-shift), var(--_chev-shift));
+    transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 350ms var(--m3e-spring-fast);
+    margin-right: 0.1em;
     flex-shrink: 0;
 }
-mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); }
+mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift)); }
 .tool-label {
     flex: 1;
     font-family: Consolas, Menlo, "Courier New", monospace;
@@ -1151,7 +1170,14 @@ function stage0Logic(wsUrl: string): string {
       body.textContent = text || '';
       item.appendChild(body);
       wrap.appendChild(item);
-      if (live || !text) wrap.setAttribute('value', 'thinking');
+      if (live || !text) {
+        wrap.setAttribute('value', 'thinking');
+        wrap.classList.add('open');
+      }
+      // mdui-collapse does not reflect value to an attribute on user toggle,
+      // so the chevron state rides on these events instead.
+      item.addEventListener('open', () => wrap.classList.add('open'));
+      item.addEventListener('close', () => wrap.classList.remove('open'));
       chatLog.appendChild(wrap);
       scrollBottom();
       return wrap;
@@ -1212,6 +1238,8 @@ function stage0Logic(wsUrl: string): string {
       }
       item.appendChild(body);
       wrap.appendChild(item);
+      item.addEventListener('open', () => wrap.classList.add('open'));
+      item.addEventListener('close', () => wrap.classList.remove('open'));
       chatLog.appendChild(wrap);
       scrollBottom();
       return { root: wrap, header: header, body: body };
