@@ -195,7 +195,11 @@ html, body {
 @media (max-width: 420px) {
     #status-ctx { display: none; }
 }
-#theme-toggle {
+/* Both app-bar icons read as one control row: the standard icon-button
+   default is on-surface-variant, but the pair matches the model name at
+   on-surface (the theme button's inline SVG already inherits this). */
+#theme-toggle,
+#bell {
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface));
 }
 #bell { flex-shrink: 0; }
@@ -395,7 +399,8 @@ mdui-collapse.thinking {
     width: 100%;
     margin: 0.25rem auto;
     border-radius: var(--mdui-shape-corner-medium);
-    background: rgb(var(--mdui-color-surface-container-low));
+    /* Sibling of the tool-call card in the same stream — same surface. */
+    background: rgb(var(--mdui-color-surface-container));
     overflow: hidden;
     transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: border-radius 350ms var(--m3e-spring-fast);
@@ -607,7 +612,9 @@ m3e-icon-button#send-btn.armed {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 m3e-icon-button#held-clear {
-    color: rgb(var(--mdui-color-on-tertiary-container));
+    /* The component paints from its own token chain, not host color — match
+       the held text it sits next to (the bar is tertiary-container). */
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-tertiary-container));
 }
 
 mdui-card#status-panel {
@@ -625,7 +632,15 @@ mdui-card#status-panel {
     color: rgb(var(--mdui-color-on-surface-variant));
     font-size: 0.78rem; margin-bottom: 0.4rem;
 }
-#status-panel .widget-phase { font-size: 0.78rem; }
+/* Phase chip matches the app bar's status pill: a stroke-free tonal pill
+   (mdui-chip's own look is a hairline-outlined assist chip). */
+#status-panel .widget-phase {
+    font-size: 0.78rem;
+    border: none;
+    border-radius: 999px;
+    background-color: rgb(var(--mdui-color-surface-container-highest));
+    color: rgb(var(--mdui-color-on-surface-variant));
+}
 /* Wavy determinate indicator — the M3 Expressive signature — rendered by
    @m3e/web's <m3e-linear-progress-indicator variant="wavy"> (loaded from
    esm.sh; mdui 2.x has no Expressive components). Its color tokens are
@@ -735,8 +750,10 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     color: rgb(var(--mdui-color-on-surface-variant));
     font-family: var(--font-mono);
 }
+/* Timestamps are the same kind of metadata whatever the role — the bubbles
+   already carry the role color, so all three stay muted. */
 .turn-time.assistant { color: rgb(var(--mdui-color-on-surface-variant)); }
-.turn-time.user { color: rgb(var(--mdui-color-primary)); }
+.turn-time.user { color: rgb(var(--mdui-color-on-surface-variant)); }
 .turn-time.system { color: rgb(var(--mdui-color-on-surface-variant)); }
 
 /* System note (centered, muted) */
