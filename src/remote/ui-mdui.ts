@@ -145,11 +145,18 @@ html, body {
 :root {
     --col-pad: max(1rem, calc((100vw - var(--chat-max-width)) / 2 + 1rem));
 }
+/* Notch/home-bar insets (viewport-fit=cover): with a single merged app bar
+   nobody else compensates for the status bar, and the composer must clear
+   the home indicator. Zero in normal browsers. */
+:root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
 #app-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.3rem 0.5rem 0.3rem 1rem;
+    padding: calc(var(--safe-top) + 0.3rem) 0.5rem 0.3rem 1rem;
     background: rgb(var(--mdui-color-surface-container));
     min-height: 3.25rem;
     box-sizing: border-box;
@@ -554,7 +561,7 @@ m3e-shape.avatar .avatar-fill.error {
 m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
 #input-bar {
     display: flex; gap: 0.5rem; align-items: flex-end;
-    padding: 0.75rem var(--col-pad) 1rem;
+    padding: 0.75rem var(--col-pad) calc(var(--safe-bottom) + 1rem);
     background: rgb(var(--mdui-color-surface-container));
     width: 100%;
     box-sizing: border-box;
@@ -643,7 +650,7 @@ mdui-card#status-panel {
 /* Bell + notif dropdown */
 #notif-panel {
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 3.7rem);
+    top: calc(var(--safe-top) + 3.7rem);
     right: 1rem;
     width: 320px; max-height: 60vh;
     background: rgb(var(--mdui-color-surface-container-high));
