@@ -423,16 +423,29 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
     color: rgb(var(--mdui-color-on-surface-variant));
 }
 .avatar {
-    width: 2.25rem; height: 2.25rem; border-radius: 50%;
+    width: 2.25rem; height: 2.25rem;
     display: flex; align-items: center; justify-content: center;
     font-size: 1.15rem; flex-shrink: 0;
 }
 .avatar.user      { background: rgb(var(--mdui-color-primary));
-    color: rgb(var(--mdui-color-on-primary)); }
-.avatar.assistant { background: rgb(var(--mdui-color-secondary-container));
-    color: rgb(var(--mdui-color-on-secondary-container)); }
-.avatar.error     { background: rgb(var(--mdui-color-error-container));
-    color: rgb(var(--mdui-color-on-error-container)); }
+    color: rgb(var(--mdui-color-on-primary));
+    border-radius: 50%; }
+/* pi's avatar: the M3 Expressive flower from @m3e/web's shape library
+   (<m3e-shape name="flower">), no hand-drawn path. m3e-shape clips its
+   children, so the tonal surface lives on an inner fill element. */
+m3e-shape.avatar { font-size: 1.15rem; }
+m3e-shape.avatar .avatar-fill {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgb(var(--mdui-color-secondary-container));
+    color: rgb(var(--mdui-color-on-secondary-container));
+}
+m3e-shape.avatar .avatar-fill.error {
+    background: rgb(var(--mdui-color-error-container));
+    color: rgb(var(--mdui-color-on-error-container));
+}
+/* Circle fallback while the shape module is still loading. */
+m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
 #input-bar {
     display: flex; gap: 0.5rem; align-items: flex-end;
     padding: 0.75rem var(--col-pad) 1rem;
@@ -858,6 +871,7 @@ function stage0Logic(wsUrl: string): string {
     // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
     // Pinned version; loaded async so a slow CDN never blocks the app boot.
     import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/shape').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -975,16 +989,33 @@ function stage0Logic(wsUrl: string): string {
         b.replaceWith(icon);
       });
     }
-    function addBubble(role, text) {
-      const wrap = document.createElement('div');
-      wrap.className = 'msg ' + role;
-      const avatar = document.createElement('div');
-      avatar.className = 'avatar ' + role;
-      avatar.innerHTML = role === 'user'
+    // User stays a plain circle; pi (and errors) wear the M3 Expressive
+    // flower from @m3e/web's shape library.
+    function makeAvatar(role) {
+      const icon = role === 'user'
         ? '<mdui-icon name="person"></mdui-icon>'
         : role === 'error'
           ? '<mdui-icon name="error_outline"></mdui-icon>'
           : '<mdui-icon name="auto_awesome"></mdui-icon>';
+      if (role === 'user') {
+        const d = document.createElement('div');
+        d.className = 'avatar ' + role;
+        d.innerHTML = icon;
+        return d;
+      }
+      const s = document.createElement('m3e-shape');
+      s.name = '4-leaf-clover';
+      s.className = 'avatar';
+      const fill = document.createElement('div');
+      fill.className = 'avatar-fill' + (role === 'error' ? ' error' : '');
+      fill.innerHTML = icon;
+      s.appendChild(fill);
+      return s;
+    }
+    function addBubble(role, text) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+      const avatar = makeAvatar(role);
       const bub = document.createElement('div');
       bub.className = 'bubble';
       if (role === 'assistant') {
@@ -1004,9 +1035,7 @@ function stage0Logic(wsUrl: string): string {
       if (!currentBubble) {
         const wrap = document.createElement('div');
         wrap.className = 'msg assistant';
-        const av = document.createElement('div');
-        av.className = 'avatar assistant';
-        av.innerHTML = '<mdui-icon name="auto_awesome"></mdui-icon>';
+        const av = makeAvatar('assistant');
         const bub = document.createElement('div');
         bub.className = 'bubble md';
         wrap.appendChild(av); wrap.appendChild(bub);
