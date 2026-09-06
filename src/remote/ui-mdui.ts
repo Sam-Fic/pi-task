@@ -78,8 +78,14 @@ html, body {
 }
 #root {
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr auto auto auto;
     height: var(--app-height, 100dvh);
+}
+
+/* Content of the bottom bands aligns with the centered chat column
+   without extra wrappers: at least 1rem, else centered-column + 1rem. */
+:root {
+    --col-pad: max(1rem, calc((100vw - var(--chat-max-width)) / 2 + 1rem));
 }
 #app-bar {
     display: flex;
@@ -125,14 +131,19 @@ html, body {
     background: linear-gradient(90deg,
         rgb(var(--mdui-color-tertiary)), rgb(var(--mdui-color-primary)), rgb(var(--mdui-color-error)));
     transition: width 0.3s; }
-#chat-wrap { overflow-y: auto; padding: 1rem;
-    display: flex; flex-direction: column; gap: 0.75rem; }
+#chat-wrap { position: relative; min-height: 0; display: flex; }
+#chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
+    padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+/* Children must keep their natural height: overflow-hidden collapse wrappers
+   would otherwise be flex-shrunk to a squashed strip instead of scrolling. */
+#chat-log > * { flex-shrink: 0; }
 .msg {
     max-width: var(--chat-max-width); width: 100%; margin: 0 auto;
     display: flex; gap: 0.75rem;
 }
 .msg.user { flex-direction: row-reverse; }
 .bubble {
+    position: relative;
     padding: 0.75rem 1rem;
     border-radius: 1rem;
     background: rgb(var(--mdui-color-surface-container-high));
@@ -348,10 +359,10 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
     color: rgb(var(--mdui-color-on-secondary-container)); }
 #input-bar {
     display: flex; gap: 0.5rem; align-items: flex-end;
-    padding: 0.75rem 1rem 1rem;
+    padding: 0.75rem var(--col-pad) 1rem;
     background: rgb(var(--mdui-color-surface-container));
     border-top: 1px solid rgb(var(--mdui-color-outline-variant));
-    max-width: var(--chat-max-width); margin: 0 auto; width: 100%;
+    width: 100%;
     box-sizing: border-box;
 }
 #input { flex: 1; min-width: 0; }
@@ -372,11 +383,10 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
 #held-bar {
     display: none;
     align-items: center; gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem var(--col-pad);
     background: rgb(var(--mdui-color-tertiary-container));
     color: rgb(var(--mdui-color-on-tertiary-container));
-    max-width: var(--chat-max-width);
-    margin: 0 auto; width: 100%;
+    width: 100%;
     box-sizing: border-box;
     font-size: 0.85rem;
 }
@@ -392,10 +402,9 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
 mdui-card#status-panel {
     display: none;
     box-sizing: border-box;
-    max-width: var(--chat-max-width);
     width: 100%;
-    margin: 0.3rem auto;
-    padding: 0.6rem 0.85rem;
+    padding: 0.6rem var(--col-pad);
+    border-radius: 0;
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface));
 }
@@ -415,7 +424,9 @@ mdui-card#status-panel {
 
 /* Bell + notif dropdown */
 mdui-button-icon#bell {
-    position: fixed; top: 0.75rem; right: 4.5rem; z-index: 50;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+    right: 4.5rem; z-index: 50;
     color: rgb(var(--mdui-color-on-surface));
 }
 mdui-button-icon#bell.on { color: rgb(var(--mdui-color-primary)); }
@@ -457,7 +468,8 @@ mdui-list#notif-list {
 /* Cmd suggestions (above input) */
 #cmd-suggestions {
     position: absolute;
-    bottom: 100%; left: 0; right: 0;
+    bottom: 100%;
+    left: var(--col-pad); right: var(--col-pad);
     margin-bottom: 0.25rem;
     background: rgb(var(--mdui-color-surface-container-high));
     border-radius: var(--mdui-shape-corner-medium);
@@ -476,7 +488,7 @@ mdui-list#notif-list {
 /* Scroll-to-bottom (mdui-fab) */
 mdui-fab#scroll-bottom {
     position: absolute;
-    bottom: 1rem; right: 1rem;
+    bottom: 1rem; right: var(--col-pad);
     display: none;
 }
 mdui-fab#scroll-bottom.show { display: inline-flex; }
@@ -510,7 +522,9 @@ mdui-fab#scroll-bottom.show { display: inline-flex; }
 /* Bubble copy button (mdui-button-icon) */
 .copy-btn {
     position: absolute;
-    top: 0.2rem; right: 0.2rem;
+    top: 0.15rem; right: 0.15rem;
+    width: 2rem; height: 2rem;
+    font-size: 1.1rem;
     opacity: 0;
     transition: opacity 0.15s;
 }
@@ -607,8 +621,20 @@ export function mduiHtml(wsUrl: string): string {
     </header>
 
     <main id="chat-wrap">
+      <div id="chat-log"></div>
       <mdui-fab id="scroll-bottom" icon="arrow_downward" size="small" aria-label="跳到底部" title="跳到底部"></mdui-fab>
     </main>
+
+    <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
+    <mdui-card id="status-panel" variant="filled" style="display:none"></mdui-card>
+
+    <!-- Held input: lines typed while a task run owns the session -->
+    <div id="held-bar" style="display:none">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 20a8 8 0 1 0-8-8 8 8 0 0 0 8 8zm0-18a10 10 0 1 1-10 10A10 10 0 0 1 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
+      <span id="held-label">waiting:</span>
+      <span id="held-text"></span>
+      <mdui-button-icon id="held-clear" icon="close" title="清除"></mdui-button-icon>
+    </div>
 
     <footer id="input-bar" style="position:relative;">
       <div id="cmd-suggestions"></div>
@@ -617,17 +643,6 @@ export function mduiHtml(wsUrl: string): string {
       <mdui-button-icon id="send-btn" icon="send" disabled aria-label="发送"></mdui-button-icon>
     </footer>
   </div>
-
-  <!-- Held input: lines typed while a task run owns the session -->
-  <div id="held-bar">
-    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 20a8 8 0 1 0-8-8 8 8 0 0 0 8 8zm0-18a10 10 0 1 1-10 10A10 10 0 0 1 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
-    <span id="held-label">waiting:</span>
-    <span id="held-text"></span>
-    <mdui-button-icon id="held-clear" icon="close" title="清除"></mdui-button-icon>
-  </div>
-
-  <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
-  <mdui-card id="status-panel" variant="filled" style="display:none"></mdui-card>
 
   <!-- Bell + notifications dropdown -->
   <mdui-button-icon id="bell" icon="notifications" aria-label="通知"></mdui-button-icon>
@@ -675,7 +690,7 @@ function stage0Logic(wsUrl: string): string {
       ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'
       : FALLBACK_WS_URL;
 
-    const chatLog      = document.getElementById('chat-wrap');
+    const chatLog      = document.getElementById('chat-log');
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
     const ctxFill      = document.getElementById('ctx-fill');
