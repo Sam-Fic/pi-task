@@ -259,6 +259,11 @@ mdui-top-app-bar#top-bar {
     --mdui-color-surface: var(--mdui-color-surface-container);
     --z-index: 30;
     width: 100%;
+    /* The small variant hardcodes a 64px host with 12px padding, which
+       double-centers our 52px row and pushes the context wave outside the
+       bar. Our row owns its spacing — the component just wraps it. */
+    padding: 0;
+    height: auto;
 }
 /* The component's default slot lays children out in a row; our single
    wrapper stacks the bar row and the context wave inside it. */
@@ -696,7 +701,7 @@ mdui-card#status-panel {
 /* Bell + notif dropdown */
 #notif-panel {
     position: fixed;
-    top: calc(var(--safe-top) + 3.7rem);
+    top: calc(var(--safe-top) + 4rem);
     right: 1rem;
     width: 320px; max-height: 60vh;
     background: rgb(var(--mdui-color-surface-container-high));
