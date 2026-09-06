@@ -244,13 +244,23 @@ html, body {
 /* Context-window usage as the same M3 Expressive wavy indicator the task
    widget uses. Track sits one tonal step above the bar; the wave turns
    error-red once usage runs hot (the old gradient's danger signal). */
-#ctx-bar {
+#ctx-stack {
+    position: relative;
     display: block;
     width: 100%;
     --md-sys-color-primary: rgb(var(--mdui-color-primary));
     --md-sys-color-secondary-container: rgb(var(--mdui-color-surface-container-highest));
 }
-#ctx-bar.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
+#ctx-stack.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
+#ctx-stack m3e-linear-progress-indicator { display: block; width: 100%; }
+/* The wavy layer lives on top and crossfades with agent activity. */
+#ctx-bar {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 300ms;
+}
+#ctx-bar.live { opacity: 1; }
 /* The top-app-bar is absolutely positioned inside this wrapper (its
    scroll-target mode requires a relative, overflow-hidden parent) and the
    chat scrolls beneath it. */
@@ -922,8 +932,16 @@ export function mduiHtml(wsUrl: string): string {
             <m3e-icon-button id="bell" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
             <m3e-icon-button id="theme-toggle" aria-label="切换主题"></m3e-icon-button>
           </div>
-          <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
-            aria-label="上下文用量"></m3e-linear-progress-indicator>
+          <!-- Flat + wavy stacked: idle shows the flat line; while the
+               agent streams the wavy one (which rolls by design) fades in
+               above it — a 300ms crossfade reads as the line growing a
+               wave. The library has no built-in amplitude morph. -->
+          <div id="ctx-stack">
+            <m3e-linear-progress-indicator id="ctx-bar-flat" value="0" max="100"
+              aria-hidden="true"></m3e-linear-progress-indicator>
+            <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
+              aria-label="上下文用量"></m3e-linear-progress-indicator>
+          </div>
         </div>
       </mdui-top-app-bar>
       <div id="chat-log"></div>
@@ -998,6 +1016,8 @@ function stage0Logic(wsUrl: string): string {
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
     const ctxBar       = document.getElementById('ctx-bar');
+    const ctxFlat      = document.getElementById('ctx-bar-flat');
+    const ctxStack     = document.getElementById('ctx-stack');
     const statusDot    = document.getElementById('status-dot');
     const statusModel  = document.getElementById('status-model');
     const statusCtx    = document.getElementById('status-ctx');
@@ -1132,7 +1152,8 @@ function stage0Logic(wsUrl: string): string {
       if (usage && usage.percent != null) {
         const pct = Math.max(0, Math.min(100, usage.percent));
         ctxBar.value = pct;
-        ctxBar.classList.toggle('hot', pct >= 85);
+        ctxFlat.value = pct;
+        ctxStack.classList.toggle('hot', pct >= 85);
       }
       if (!usage) return;
       const parts = [];
@@ -1166,6 +1187,7 @@ function stage0Logic(wsUrl: string): string {
        the agent is actually working. */
     function paintCtxWave() {
       const apply = () => {
+        ctxBar.classList.toggle('live', agentRunning);
         const p = ctxBar.shadowRoot && ctxBar.shadowRoot.querySelector('.primary path');
         if (p) p.style.animationPlayState = agentRunning ? 'running' : 'paused';
       };
@@ -2032,7 +2054,7 @@ function stage0Logic(wsUrl: string): string {
           taskWidgetData = m.taskWidgetData || null;
           renderWidgets();
           setModelName(m.model);
-          if (m.context) setContextBar(m.context); else { ctxBar.value = 0; ctxBar.classList.remove('hot'); }
+          if (m.context) setContextBar(m.context); else { ctxBar.value = 0; ctxFlat.value = 0; ctxStack.classList.remove('hot'); }
           agentRunning = !!m.agentRunning;
           held = m.held || [];
           runHolding = !!m.heldRunActive;
@@ -2171,7 +2193,7 @@ function stage0Logic(wsUrl: string): string {
           refreshComposer(); setSendBtn();
           taskWidgetLines = null; taskWidgetData = null;
           renderWidgets();
-          ctxBar.value = 0; ctxBar.classList.remove('hot');
+          ctxBar.value = 0; ctxFlat.value = 0; ctxStack.classList.remove('hot');
           break;
       }
     }
