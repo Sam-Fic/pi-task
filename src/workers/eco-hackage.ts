@@ -700,15 +700,6 @@ function haskellSources(root: string): string[] {
     return out
 }
 
-/** Source of everything this row contributes to a chunk's content — see
- *  `cargoContentFingerprint` for why a top-level `String(fn)` is not enough. */
-export function hackageContentFingerprint(): string {
-    return [hackageExportGap, haskellSources, exportListText, declaredInSurface, haskellSurface]
-        .map(String)
-        .concat([REEXPORT_RE.source, EXPORT_NAME_RE.source])
-        .join('\u0000')
-}
-
 export function hackageExportGap(root: string): ExportGap {
     const declared = new Set<string>()
     const exported = new Set<string>()

@@ -450,47 +450,6 @@ describe('a back-compat major directory is not indexed', () => {
     })
 })
 
-describe('the content fingerprint covers every function that shapes a chunk', () => {
-    // Three bugs have now hidden one level below a `String(fn)`: the chunker
-    // (fixed by chunkerFingerprint), the export-gap rule, and cargo's `surface`,
-    // which is the wrapper `content => rustSurface(content)` and shows none of
-    // rustSurface at all. One fingerprint per ecosystem, owned by the ecosystem.
-    test('cargo names its surface extractor and its gap rule, not a wrapper', () => {
-        const fp = ECOSYSTEMS.cargo.contentFingerprint()
-        for (const fn of ['splitRustItems', 'macroWrappedItems', 'runtimeDeps', 'useTargets']) {
-            expect(fp).toContain(fn)
-        }
-        expect(fp).toContain('pub\\s+use')
-    })
-
-    test('hackage names its own', () => {
-        const fp = ECOSYSTEMS.hackage.contentFingerprint()
-        for (const fn of ['haskellSurface', 'exportListText', 'declaredInSurface']) {
-            expect(fp).toContain(fn)
-        }
-    })
-
-    test('npm has no gap rule and says so without pretending to one', () => {
-        expect(ECOSYSTEMS.npm.contentFingerprint()).toContain('content')
-    })
-
-    test('a changed fingerprint re-indexes a cached package', () => {
-        const cache = openCache(':memory:')
-        try {
-            const pkg = resolvePackage('tiny-pkg', FIXTURES)
-            expect(ensureIndexed(cache, pkg).hitCache).toBe(false)
-            expect(ensureIndexed(cache, pkg).hitCache).toBe(true)
-            const moved = {
-                ...ECOSYSTEMS.npm,
-                contentFingerprint: () => `${ECOSYSTEMS.npm.contentFingerprint()} moved`
-            }
-            expect(ensureIndexed(cache, pkg, moved).hitCache).toBe(false)
-        } finally {
-            cache.close()
-        }
-    })
-})
-
 test('the content hash covers the CHUNKER, not just the split regex', () => {
     // The attribute-orphaning bug lived in splitAtMatches. Fixing it changed
     // every cargo package's rows and moved no profile regex, so the fingerprint
@@ -639,25 +598,6 @@ describe('a cargo facade reaches its implementation', () => {
         try {
             ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()])
             expect(bodies(cache, 'tiny-axum')).not.toContain('unrelated_helper')
-        } finally {
-            cache.close()
-        }
-    })
-
-    test('changing the gap rule re-indexes a cached crate', () => {
-        // Same class as the chunker fingerprint above. The supplement SET is
-        // hashed, but the rule that decides which of a supplement's chunks are
-        // kept was not — so a fix to `cargoExportGap` left every cached facade
-        // holding the chunks the old rule chose.
-        const cache = openCache(':memory:')
-        try {
-            expect(ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()]).hitCache).toBe(false)
-            expect(ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()]).hitCache).toBe(true)
-            const widened = {
-                ...ECOSYSTEMS.cargo,
-                contentFingerprint: () => `${ECOSYSTEMS.cargo.contentFingerprint()} widened`
-            }
-            expect(ensureIndexed(cache, facade(), widened, [core()]).hitCache).toBe(false)
         } finally {
             cache.close()
         }

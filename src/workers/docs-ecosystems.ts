@@ -43,7 +43,6 @@ import {
     lockedDeps,
     manifestCrates,
     cargoExportGap,
-    cargoContentFingerprint,
     cargoSupplementCandidates,
     CARGO_DECL_SPLIT_RE
 } from './eco-cargo.js'
@@ -56,7 +55,6 @@ import {
     hackageProjectName,
     supplementCandidates,
     hackageExportGap,
-    hackageContentFingerprint,
     findCabalTarball,
     cachedVersions,
     resolvedVersions,
@@ -208,16 +206,6 @@ export interface EcosystemProfile {
      * which of a supplement's chunks are kept.
      */
     exportGap?: (root: string) => ExportGap
-    /**
-     * Source of everything this row contributes to a chunk's CONTENT — `surface`,
-     * `exportGap`, and every function and regex they delegate to.
-     *
-     * Required, and not derived from `String(surface)`, because that has hidden a
-     * real fix three times: `surface` here is the wrapper
-     * `content => rustSurface(content)`, which shows none of `rustSurface`, and
-     * neither gap rule's helpers appear in its entry point either.
-     */
-    contentFingerprint: () => string
     /** The registry's own newest version, for grounding an answer in the present. */
     latest: (name: string, io: EcosystemIo) => Promise<NpmVersionInfo | null>
 
@@ -281,10 +269,6 @@ export interface NpmProfileHooks {
  * hooks, and those hooks must keep reaching the resolution they are injected
  * for. A per-call row carries them; {@link ECOSYSTEMS} holds the plain one.
  */
-/** A `.d.ts` is already declarations only, so npm's extractor is the identity.
- *  Named rather than inline so `contentFingerprint` can point at it. */
-const npmSurface = (content: string): string => content
-
 export function npmProfile(hooks: NpmProfileHooks = {}): EcosystemProfile {
     const resolve = hooks.resolvePackage ?? resolvePackage
     const versionLookup = hooks.npmVersionLookup ?? npmVersionLookup
@@ -317,10 +301,7 @@ export function npmProfile(hooks: NpmProfileHooks = {}): EcosystemProfile {
             versionLookup(name, io.signal === undefined ? {} : {signal: io.signal}),
 
         isSurfaceFile: isDtsFile,
-        surface: npmSurface,
-        // No gap rule, and a `.d.ts` IS the surface, so there is nothing below the
-        // identity for a fingerprint to miss.
-        contentFingerprint: () => String(npmSurface),
+        surface: content => content,
         declSplitRe: DECL_SPLIT_RE,
         typeKeywords: ['interface', 'type', 'class', 'enum'],
         commentPrefix: '//',
@@ -487,11 +468,7 @@ const cargoProfile: EcosystemProfile = {
     supplements: async (pkg, cwd, io) => {
         const deps = manifestCrates(pkg.root)
         if (!deps) return []
-        // The PROJECT's lock, never the crate's own root. `findLock` walks upward,
-        // and a crate unpacked under `~/.cargo/registry` sits below whatever lock
-        // happens to be above it — which resolved a version this project never
-        // pinned, making the index a function of the machine.
-        const candidates = cargoSupplementCandidates(pkg.name, deps, lockedDeps(cwd) ?? {})
+        const candidates = cargoSupplementCandidates(pkg.name, deps, lockedDeps(pkg.root) ?? {})
         const out: ResolvedPackage[] = []
         for (const c of candidates) {
             try {
@@ -516,13 +493,9 @@ const cargoProfile: EcosystemProfile = {
         return out
     },
     exportGap: cargoExportGap,
-    contentFingerprint: cargoContentFingerprint,
     latest: (name, io) => cratesLatest(name, io.fetch, io.signal),
 
     isSurfaceFile: isRustFile,
-    // Wrapped, not passed by reference: `rustSurface` takes two more optional
-    // arguments, and a bare reference would let a `.map(profile.surface)` pass an
-    // index as `insideTrait`. `contentFingerprint` is what covers its source.
     surface: content => rustSurface(content),
     declSplitRe: CARGO_DECL_SPLIT_RE,
     typeKeywords: ['struct', 'trait', 'enum', 'type', 'union'],
@@ -650,7 +623,6 @@ const hackageProfile: EcosystemProfile = {
         return out
     },
     exportGap: hackageExportGap,
-    contentFingerprint: hackageContentFingerprint,
     latest: (name, io) => hackageLatest(name, io.fetch, io.signal),
 
     isSurfaceFile: isHaskellFile,
