@@ -3,7 +3,6 @@ dist/
 plans/
 docs/
 nexttask*.md
-.codebuddy/
 
 # Negations must follow the ignore rules above to take effect.
 !test/workers/__fixtures__/node_modules/
@@ -11,7 +10,6 @@ nexttask*.md
 
 # Run state written by /task when pi-task is developed on itself.
 .pi-tasks/
-
-# Local-only artifacts: npm lockfile (repo uses bun) and the offline UI preview.
-package-lock.json
-preview.html
+live-docs-*/ts/
+live-docs-*/rs/
+live-docs-*/hs/
