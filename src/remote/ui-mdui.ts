@@ -1826,7 +1826,7 @@ function stage0Logic(wsUrl: string): string {
       promptInput.value = '';
       renderButtons([
         makeBtn('Submit', 'primary', () => answer(promptInput.value)),
-        makeBtn('← Back', 'secondary', showRecommendation)
+        makeBtn('Back', 'secondary', showRecommendation)
       ]);
       promptInput.focus();
     }
@@ -1837,13 +1837,13 @@ function stage0Logic(wsUrl: string): string {
         promptRec.style.display = 'none';
         buttons.push(makeBtn(activeRecommended, 'primary', () => answer(activeRecommended)));
         buttons.push(makeBtn(activeRecommended2, 'secondary', () => answer(activeRecommended2)));
-        buttons.push(makeBtn('✎ Manual answer', 'secondary', showManualEntry));
+        buttons.push(makeBtn('Manual answer', 'secondary', showManualEntry));
         renderButtons(buttons, true);
         return;
       }
       promptRec.style.display = 'block';
-      buttons.push(makeBtn('✓ Accept', 'primary', () => answer(activeRecommended)));
-      buttons.push(makeBtn('✎ Manual answer', 'secondary', showManualEntry));
+      buttons.push(makeBtn('Accept', 'primary', () => answer(activeRecommended)));
+      buttons.push(makeBtn('Manual answer', 'secondary', showManualEntry));
       renderButtons(buttons);
     }
     function showPrompt(msg) {
