@@ -250,6 +250,10 @@ html, body {
     color: rgb(var(--mdui-color-on-surface-variant));
     font-family: Consolas, Menlo, "Courier New", monospace;
     font-size: 0.7rem; letter-spacing: 0.05em;
+    /* kill the inherited 1.55 strut: its asymmetric half-leading rode the
+       text optically high next to the 16px icon line box */
+    line-height: 1;
+    display: flex; align-items: center;
 }
 .bubble .code-head .copy-btn {
     font-size: 1rem;
