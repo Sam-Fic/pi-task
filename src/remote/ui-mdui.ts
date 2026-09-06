@@ -117,23 +117,26 @@ html, body {
     color: rgb(var(--mdui-color-on-surface));
     font-family: var(--font-sans);
 }
-/* MD3 scrollbar adaptation for the app's scroll surfaces (chat log, command
-   suggestions, notifications): a slim rounded thumb in a muted tonal color
-   floating on a transparent track, instead of the browser's chunky default.
-   scrollbar-color covers standard engines; the webkit rules cover the rest. */
+/* Native scrollbars are hidden app-wide — scrolling surfaces get the
+   custom .scroll-thumb overlay instead (see attachScrollbar in the client:
+   fades in while scrolling, idles out, draggable). */
 * {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(var(--mdui-color-on-surface-variant) / 0.4) transparent;
+    scrollbar-width: none;
 }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.scroll-thumb {
+    position: absolute;
+    width: 5px;
     border-radius: 999px;
-    background: rgb(var(--mdui-color-on-surface-variant) / 0.4);
+    background: color-mix(in srgb, rgb(var(--mdui-color-on-surface-variant)) 55%, transparent);
+    opacity: 0;
+    transition: opacity 250ms;
+    pointer-events: auto;
+    cursor: default;
+    z-index: 6;
 }
-::-webkit-scrollbar-thumb:hover {
-    background: rgb(var(--mdui-color-on-surface-variant) / 0.6);
-}
+.scroll-thumb.on { opacity: 1; }
+.scroll-thumb.dragging { background: color-mix(in srgb, rgb(var(--mdui-color-on-surface-variant)) 80%, transparent); }
 #root {
     display: grid;
     /* The app bar now overlays #chat-wrap (mdui-top-app-bar), so the chat
@@ -1168,6 +1171,68 @@ function stage0Logic(wsUrl: string): string {
       if (icon) icon.name = agentRunning ? 'stop' : 'send';
     }
 
+    // ───────────── Custom scrollbars ─────────────
+    /* Native scrollbars are hidden app-wide; this overlay thumb replaces
+       them on the main surfaces: fades in while scrolling, idles out after
+       700ms, and is draggable (1px of thumb travel = scrollHeight/clientHeight
+       px of content). host must be a positioned ancestor of scroller. */
+    function attachScrollbar(scroller, host) {
+      const thumb = document.createElement('div');
+      thumb.className = 'scroll-thumb';
+      host.appendChild(thumb);
+      let hideTimer = null, dragging = false, startPointerY = 0, startScrollTop = 0;
+      function paint() {
+        const max = scroller.scrollHeight - scroller.clientHeight;
+        if (max <= 2) { thumb.style.display = 'none'; return; }
+        thumb.style.display = 'block';
+        const track = scroller.clientHeight - 8;
+        const h = Math.max(28, Math.round(scroller.clientHeight * scroller.clientHeight / scroller.scrollHeight));
+        const top = scroller.getBoundingClientRect().top - host.getBoundingClientRect().top
+          + 4 + (max ? (scroller.scrollTop / max) * (track - h) : 0);
+        const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + 2;
+        thumb.style.height = h + 'px';
+        thumb.style.top = top + 'px';
+        thumb.style.right = right + 'px';
+      }
+      function show() {
+        paint();
+        thumb.classList.add('on');
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => { if (!dragging) thumb.classList.remove('on'); }, 700);
+      }
+      thumb.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        startPointerY = e.clientY;
+        startScrollTop = scroller.scrollTop;
+        thumb.classList.add('dragging');
+        thumb.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+      thumb.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const max = scroller.scrollHeight - scroller.clientHeight;
+        const track = scroller.clientHeight - 8;
+        const h = parseFloat(thumb.style.height) || 28;
+        scroller.scrollTop = startScrollTop + (e.clientY - startPointerY) * (max / Math.max(1, track - h));
+      });
+      const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        thumb.classList.remove('dragging');
+        try { thumb.releasePointerCapture(e.pointerId); } catch (err) {}
+        show();
+      };
+      thumb.addEventListener('pointerup', endDrag);
+      thumb.addEventListener('pointercancel', endDrag);
+      scroller.addEventListener('scroll', show);
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(show).observe(scroller);
+      show();
+      return { paint };
+    }
+    attachScrollbar(chatLog, document.getElementById('chat-wrap'));
+    const cmdScrollbar = attachScrollbar(cmdSuggestions, document.getElementById('input-bar'));
+    attachScrollbar(notifList, notifPanel);
+
     // ───────────── Scroll tracking ─────────────
     function atBottom() {
       return chatLog.scrollTop + chatLog.clientHeight >= chatLog.scrollHeight - 24;
@@ -1683,6 +1748,7 @@ function stage0Logic(wsUrl: string): string {
         list.appendChild(el);
       });
       cmdSuggestions.appendChild(list);
+      if (cmdScrollbar) cmdScrollbar.paint();
     }
     function pickCmd(i) {
       const cmd = cmdActive[i];
