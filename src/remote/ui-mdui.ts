@@ -121,7 +121,7 @@ html, body {
     flex: 1;
 }
 #theme-toggle {
-    color: rgb(var(--mdui-color-on-surface-variant));
+    color: rgb(var(--mdui-color-on-surface));
 }
 #status-bar {
     display: flex; align-items: center; gap: 0.75rem;
