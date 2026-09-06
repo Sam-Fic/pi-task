@@ -136,7 +136,9 @@ html, body {
 }
 #root {
     display: grid;
-    grid-template-rows: auto 1fr auto auto auto;
+    /* The app bar now overlays #chat-wrap (mdui-top-app-bar), so the chat
+       area is the first row. */
+    grid-template-rows: 1fr auto auto auto;
     height: var(--app-height, 100dvh);
 }
 
@@ -152,21 +154,20 @@ html, body {
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* Expressive color blocking: the app bar is a primary-container color field
-   (token-driven, so light/dark both resolve), not another gray band. */
+/* The app bar stays a quiet neutral band — the expressive accents live in
+   the composer, avatars and the task panel instead. */
 #app-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: calc(var(--safe-top) + 0.3rem) 0.5rem 0.3rem 1rem;
-    background: rgb(var(--mdui-color-primary-container));
-    color: rgb(var(--mdui-color-on-primary-container));
+    background: rgb(var(--mdui-color-surface-container));
     min-height: 3.25rem;
     box-sizing: border-box;
 }
 #app-bar .grow { flex: 1; }
 /* The model name takes the old title slot; falls back to the app name
-   (softened) before the first snapshot reports a model. */
+   (muted) before the first snapshot reports a model. */
 #status-model {
     /* Information, not a wordmark: the model name in the platform's UI font
        (the old rounded display face was leftover title styling). */
@@ -174,7 +175,7 @@ html, body {
     font-weight: 650;
     letter-spacing: 0.01em;
     line-height: 1.4;
-    color: rgb(var(--mdui-color-on-primary-container));
+    color: rgb(var(--mdui-color-on-surface));
     /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
        names still ellipsize when the row genuinely runs out of room. */
     flex: 0 1 auto;
@@ -184,12 +185,12 @@ html, body {
     white-space: nowrap;
 }
 #status-model.fallback {
-    color: color-mix(in srgb, rgb(var(--mdui-color-on-primary-container)) 72%, transparent);
+    color: rgb(var(--mdui-color-on-surface-variant));
     font-weight: 550;
 }
 #status-ctx {
     font-size: 0.78rem;
-    color: color-mix(in srgb, rgb(var(--mdui-color-on-primary-container)) 80%, transparent);
+    color: rgb(var(--mdui-color-on-surface-variant));
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -198,15 +199,14 @@ html, body {
 @media (max-width: 420px) {
     #status-ctx { display: none; }
 }
-/* App-bar icons sit on the primary-container field, so both read at
-   on-primary-container; the bell's subscribed state picks tertiary for a
-   distinct hue that still holds on the color field. */
+/* App-bar icon pair reads at on-surface (brighter than the icon-button
+   default; the theme button's inline SVG inherits the same color). */
 #theme-toggle,
 #bell {
-    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-primary-container));
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface));
 }
 #bell { flex-shrink: 0; }
-#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-tertiary)); }
+#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-primary)); }
 /* Status readout, not an action: a plain pill instead of mdui-chip, whose
    button internals bring ripple/press affordances a passive indicator
    must not have. Neutral tonal pill against the color field. */
@@ -227,9 +227,7 @@ html, body {
     flex-shrink: 0;
 }
 #status-dot.connected.idle    { background: rgb(var(--mdui-color-tertiary)); }
-/* running reads at on-primary-container — primary would vanish on the
-   primary-container bar. */
-#status-dot.connected.running { background: rgb(var(--mdui-color-on-primary-container));
+#status-dot.connected.running { background: rgb(var(--mdui-color-primary));
     animation: pulse 1.4s ease-in-out infinite; }
 #status-dot.disconnected      { background: rgb(var(--mdui-color-error)); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
@@ -243,9 +241,24 @@ html, body {
     --md-sys-color-secondary-container: rgb(var(--mdui-color-surface-container-highest));
 }
 #ctx-bar.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
-#chat-wrap { position: relative; min-height: 0; display: flex; }
+/* The top-app-bar is absolutely positioned inside this wrapper (its
+   scroll-target mode requires a relative, overflow-hidden parent) and the
+   chat scrolls beneath it. */
+#chat-wrap { position: relative; min-height: 0; display: flex; overflow: hidden; }
 #chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
     padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+/* The bar paints neutral (matching the #app-bar row); it also must clear
+   the notch. mdui tokens are bare RGB triplets — override with triplet
+   vars, never rgb()-wrapped values. */
+mdui-top-app-bar#top-bar {
+    --mdui-color-surface: var(--mdui-color-surface-container);
+    --mdui-color-on-surface: var(--mdui-color-on-surface);
+    --z-index: 30;
+    width: 100%;
+}
+/* The component's default slot lays children out in a row; our single
+   wrapper stacks the bar row and the context wave inside it. */
+mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
 /* Children must keep their natural height: overflow-hidden collapse wrappers
    would otherwise be flex-shrunk to a squashed strip instead of scrolling. */
 #chat-log > * { flex-shrink: 0; }
@@ -873,24 +886,30 @@ export function mduiHtml(wsUrl: string): string {
 </head>
 <body>
   <div id="root">
-    <header>
-      <!-- Single compact bar: identity/model + status + actions. The old
-           two-row layout (big title above a model row) wasted vertical space
-           on mobile, so the model name now takes the title slot. -->
-      <div id="app-bar">
-        <span id="status-dot"></span>
-        <span id="status-model">π-task remote</span>
-        <span id="status-ctx"></span>
-        <span class="grow"></span>
-        <span id="status-chip">disconnected</span>
-        <m3e-icon-button id="bell" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
-        <m3e-icon-button id="theme-toggle" aria-label="切换主题"></m3e-icon-button>
-      </div>
-      <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
-        aria-label="上下文用量"></m3e-linear-progress-indicator>
-    </header>
-
     <main id="chat-wrap">
+      <!-- Single compact bar: identity/model + status + actions. mdui's
+           top-app-bar drives the hide-on-scroll-down / show-on-scroll-up
+           behavior against the chat log as its scroll target (M3E's app-bar
+           has no scroll behavior, and the scroller is an inner element, so
+           the attribute is set from JS after the DOM is parsed). -->
+      <mdui-top-app-bar id="top-bar" variant="small" scroll-behavior="hide" scroll-threshold="16">
+        <!-- One wrapper: the component's default slot is a horizontal flex
+             (icon + title + actions), so the bar row and the wavy context
+             line must live in a single block child to stack. -->
+        <div class="bar-stack">
+          <div id="app-bar">
+            <span id="status-dot"></span>
+            <span id="status-model">π-task remote</span>
+            <span id="status-ctx"></span>
+            <span class="grow"></span>
+            <span id="status-chip">disconnected</span>
+            <m3e-icon-button id="bell" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
+            <m3e-icon-button id="theme-toggle" aria-label="切换主题"></m3e-icon-button>
+          </div>
+          <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
+            aria-label="上下文用量"></m3e-linear-progress-indicator>
+        </div>
+      </mdui-top-app-bar>
       <div id="chat-log"></div>
       <m3e-fab id="scroll-bottom" variant="primary-container" size="small" aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
     </main>
@@ -1155,6 +1174,14 @@ function stage0Logic(wsUrl: string): string {
     function scrollBottom() {
       if (autoScroll) chatLog.scrollTop = chatLog.scrollHeight;
       scrollBtn.classList.toggle('show', !atBottom());
+      /* Auto-scroll counts as "scrolling down" to the top-app-bar's hide
+         behavior — the bar must not collapse just because a reply arrived.
+         Double rAF: the component re-hides from its own throttled scroll
+         handler one frame after ours, so reset on the frame after that. */
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const tb = document.getElementById('top-bar');
+        if (tb && tb.hide) tb.hide = false;
+      }));
     }
     chatLog.addEventListener('scroll', () => {
       autoScroll = atBottom();
@@ -2137,6 +2164,10 @@ function stage0Logic(wsUrl: string): string {
     setAppHeight();
     window.addEventListener('resize', setAppHeight);
     window.addEventListener('orientationchange', setAppHeight);
+
+    // The top-app-bar resolves its scroll target lazily; set it from here
+    // (module scripts run after the DOM is parsed, so #chat-log exists).
+    document.getElementById('top-bar').setAttribute('scroll-target', '#chat-log');
 
     setSendBtn();
     refreshComposer();
