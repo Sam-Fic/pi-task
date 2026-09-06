@@ -2094,9 +2094,15 @@ function stage0Logic(wsUrl: string): string {
           turnHadContent = true;
           if (!currentBubble) {
             finalizeThinking();
+            // Same .msg row + shape avatar as every other assistant bubble —
+            // a bare bubble renders with no avatar and full column width.
+            const wrap = document.createElement('div');
+            wrap.className = 'msg assistant';
+            wrap.appendChild(makeAvatar('assistant'));
             currentBubble = document.createElement('div');
             currentBubble.className = 'bubble md';
-            chatLog.appendChild(currentBubble);
+            wrap.appendChild(currentBubble);
+            chatLog.appendChild(wrap);
             streamText = '';
           }
           streamText += m.delta;
@@ -2234,11 +2240,18 @@ function stage0Logic(wsUrl: string): string {
         const last = i === parts.length - 1;
         if (p.kind === 'text') {
           if (last && live.textOpen) {
+            // Same structure as the delta path: an .msg row with the shape
+            // avatar, not a bare bubble — a bare bubble renders with no
+            // avatar and full column width.
+            const wrap = document.createElement('div');
+            wrap.className = 'msg assistant';
+            wrap.appendChild(makeAvatar('assistant'));
             currentBubble = document.createElement('div');
             currentBubble.className = 'bubble md';
             if (p.text) currentBubble.textContent = p.text;
             streamText = p.text || '';
-            chatLog.appendChild(currentBubble);
+            wrap.appendChild(currentBubble);
+            chatLog.appendChild(wrap);
             scrollBottom();
           } else if (p.text) {
             addBubble('assistant', p.text);
