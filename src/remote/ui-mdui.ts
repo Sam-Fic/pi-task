@@ -68,6 +68,13 @@ m3e-icon-button#send-btn {
     transform: rotate(var(--send-rot, 0deg));
     transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: transform 350ms var(--m3e-spring-fast);
+    /* Capsule, as tall as the input it sits beside: stretch to the
+       composer row and widen past the height so the full-radius shape
+       reads as a stadium, not a circle. Height tracks the autosize input
+       as it grows. */
+    width: 5.25rem;
+    align-self: stretch;
+    --m3e-icon-button-container-height: 100%;
 }
 m3e-icon-button#send-btn:active {
     transform: rotate(var(--send-rot, 0deg)) scale(0.94);
@@ -938,7 +945,7 @@ export function mduiHtml(wsUrl: string): string {
       <div id="cmd-suggestions"></div>
       <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
-      <m3e-icon-button id="send-btn" variant="filled" shape="square" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
+      <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
     </footer>
   </div>
 
