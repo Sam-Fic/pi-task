@@ -86,6 +86,11 @@ m3e-icon-button#send-btn:active {
 :root {
     color-scheme: light dark;
     --chat-max-width: 920px;
+    /* Two type faces only: the platform's UI font for everything people
+       read as prose, and the platform's monospace for anything that is
+       code, an identifier, or machine output. */
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
     /* Bridge the MD tokens the m3e buttons consume onto the mdui palette,
        so both libraries follow one theme (light/dark included). */
     --md-sys-color-primary: rgb(var(--mdui-color-primary));
@@ -110,7 +115,7 @@ html, body {
     overflow: hidden;
     background: rgb(var(--mdui-color-surface));
     color: rgb(var(--mdui-color-on-surface));
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-sans);
 }
 /* MD3 scrollbar adaptation for the app's scroll surfaces (chat log, command
    suggestions, notifications): a slim rounded thumb in a muted tonal color
@@ -153,9 +158,10 @@ html, body {
 /* The model name takes the old title slot; falls back to the app name
    (muted) before the first snapshot reports a model. */
 #status-model {
+    /* Information, not a wordmark: the model name in the platform's UI font
+       (the old rounded display face was leftover title styling). */
     font-size: 1.05rem;
     font-weight: 650;
-    font-family: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif;
     letter-spacing: 0.01em;
     line-height: 1.4;
     color: rgb(var(--mdui-color-on-surface));
@@ -284,7 +290,7 @@ html, body {
     color: rgb(var(--mdui-color-on-surface));
     padding: 0.1em 0.4em;
     border-radius: 0.25rem;
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
 }
 /* Code block. Language + copy float as a pill over the top-right corner
@@ -325,7 +331,7 @@ html, body {
 }
 .bubble .code-lang {
     color: rgb(var(--mdui-color-on-surface-variant));
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.7rem; letter-spacing: 0.05em;
     /* kill the inherited 1.55 strut: its asymmetric half-leading rode the
        text optically high next to the 16px icon line box */
@@ -420,7 +426,10 @@ mdui-collapse.thinking.open .thinking-header::before { transform: rotate(45deg) 
 .thinking-body {
     margin: 0;
     padding: 0.5rem 1rem 0.85rem;
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    /* Reasoning prose, not code — the default UI font reads better for the
+       long wrapped paragraphs a thinking block can hold. Set explicitly:
+       the element is a <pre>, whose UA font would otherwise win. */
+    font-family: var(--font-sans);
     font-size: 0.82rem;
     line-height: 1.5;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -473,7 +482,7 @@ mdui-collapse.tool-call.error {
 mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift)); }
 .tool-label {
     flex: 1;
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface));
     overflow: hidden;
@@ -483,7 +492,7 @@ mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) tra
 }
 .tool-badge {
     flex-shrink: 0;
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     padding: 0.1rem 0.4rem;
     border-radius: var(--mdui-shape-corner-extra-small);
@@ -498,7 +507,7 @@ mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) tra
 .tool-diff {
     padding: 0.4rem 0.85rem 0.4rem;
     background: rgb(var(--mdui-color-surface-container-lowest));
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.45;
     overflow-x: auto;
@@ -509,7 +518,7 @@ mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) tra
     margin: 0;
     padding: 0.5rem 0.85rem;
     background: rgb(var(--mdui-color-surface-container-lowest));
-    font-family: Consolas, Menlo, "Courier New", monospace;
+    font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.45;
     white-space: pre-wrap;
@@ -626,7 +635,7 @@ mdui-card#status-panel {
     mdui-button, mdui-button-icon { transition: none; }
 }
 #status-panel.structured .widget-action {
-    font-family: Consolas, Menlo, monospace; font-size: 0.78rem;
+    font-family: var(--font-mono); font-size: 0.78rem;
     color: rgb(var(--mdui-color-on-surface-variant));
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -687,6 +696,11 @@ mdui-list#notif-list {
     cursor: pointer;
     font-size: 0.9rem;
 }
+/* The command name is an identifier you'll retype — monospace, like the
+   tool labels and code elsewhere. */
+#cmd-suggestions mdui-list-item::part(headline) {
+    font-family: var(--font-mono);
+}
 
 /* Scroll-to-bottom (mdui-fab) */
 m3e-fab#scroll-bottom {
@@ -712,7 +726,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     text-align: center;
     font-size: 0.7rem;
     color: rgb(var(--mdui-color-on-surface-variant));
-    font-family: Consolas, Menlo, monospace;
+    font-family: var(--font-mono);
 }
 .turn-time.assistant { color: rgb(var(--mdui-color-on-surface-variant)); }
 .turn-time.user { color: rgb(var(--mdui-color-primary)); }
