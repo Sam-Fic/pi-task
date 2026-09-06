@@ -949,7 +949,7 @@ export function mduiHtml(wsUrl: string): string {
         </div>
       </mdui-top-app-bar>
       <div id="chat-log"></div>
-      <m3e-fab id="scroll-bottom" variant="primary-container" size="small" lowered aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
+      <m3e-fab id="scroll-bottom" variant="tertiary-container" size="small" lowered aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
     </main>
 
     <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
