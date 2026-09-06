@@ -1189,7 +1189,7 @@ function stage0Logic(wsUrl: string): string {
         const h = Math.max(28, Math.round(scroller.clientHeight * scroller.clientHeight / scroller.scrollHeight));
         const top = scroller.getBoundingClientRect().top - host.getBoundingClientRect().top
           + 4 + (max ? (scroller.scrollTop / max) * (track - h) : 0);
-        const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + 2;
+        const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + 6;
         thumb.style.height = h + 'px';
         thumb.style.top = top + 'px';
         thumb.style.right = right + 'px';
