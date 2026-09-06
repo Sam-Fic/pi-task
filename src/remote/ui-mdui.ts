@@ -54,6 +54,21 @@ const BUNDLE_IMPORTS = `
 const ICON_IMPORTS = ''
 
 const CSS = `
+/* ── Material 3 Expressive accents (on top of mdui 2.x, which is plain M3) ──
+   Spring motion tokens, shape morphing, wavy progress. Motion respects
+   prefers-reduced-motion. */
+:root {
+    --m3e-spring-fast: linear(0, 0.0134 1.85%, 0.0487 3.7%, 0.1664 7.4%, 0.5724 12.4%, 0.8029 15.9%, 0.9432 19.7%, 1.0292 23.8%, 1.0834 28.4%, 1.1068 32.8%, 1.1121 37.2%, 1.101 41.6%, 1.083 46%, 1.0605 50.9%, 1.0229 58.5%, 1.0039 66.2%, 0.9985 74%, 1.0011 84.6%, 1);
+    --m3e-spring-spatial: linear(0, 0.0062 0.9%, 0.025 1.9%, 0.1 4.1%, 0.4174 8.7%, 0.6829 12.5%, 0.8764 16.4%, 0.9841 20.4%, 1.0665 24.6%, 1.1161 29.1%, 1.1349 33.9%, 1.1353 38.4%, 1.1266 42.9%, 1.1049 48%, 1.0581 55.5%, 1.0254 62.4%, 1.0072 70.1%, 0.9997 79.5%, 1 100%);
+}
+mdui-button, mdui-button-icon, mdui-fab, mdui-chip {
+    transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 350ms var(--m3e-spring-fast);
+}
+mdui-button:active, mdui-button-icon:active, mdui-fab:active {
+    transform: scale(0.93);
+}
+
 /* mdui 2.x does not load the Material Icons font itself — without this,
    icon="..." attributes render as raw ligature text ("send", "close"...).
    Load it from the same CDN as the mdui bundle so offline/LAN usage
@@ -97,8 +112,10 @@ html, body {
     box-sizing: border-box;
 }
 #app-bar-title {
-    font-size: 1.375rem;
-    font-weight: 400;
+    font-size: 1.45rem;
+    font-weight: 650;
+    font-family: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif;
+    letter-spacing: 0.01em;
     line-height: 1.75rem;
     color: rgb(var(--mdui-color-on-surface));
     flex: 1;
@@ -127,7 +144,7 @@ html, body {
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 #ctx-bar { height: 4px;
     background: rgb(var(--mdui-color-surface-container-high)); overflow: hidden; }
-#ctx-fill { height: 100%; width: 0%;
+#ctx-fill { height: 100%; width: 0%; border-radius: 0 999px 999px 0;
     background: linear-gradient(90deg,
         rgb(var(--mdui-color-tertiary)), rgb(var(--mdui-color-primary)), rgb(var(--mdui-color-error)));
     transition: width 0.3s; }
@@ -235,7 +252,10 @@ mdui-collapse.thinking {
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container-low));
     overflow: hidden;
+    transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: border-radius 350ms var(--m3e-spring-fast);
 }
+mdui-collapse.thinking[value] { border-radius: 1.125rem; }
 .thinking .thinking-header {
     cursor: pointer;
     padding: 0.5rem 0.85rem;
@@ -276,7 +296,10 @@ mdui-collapse.tool-call {
     background: rgb(var(--mdui-color-surface-container));
     border: 1px solid rgb(var(--mdui-color-outline-variant));
     overflow: hidden;
+    transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: border-radius 350ms var(--m3e-spring-fast);
 }
+mdui-collapse.tool-call[value] { border-radius: 1.125rem; }
 mdui-collapse.tool-call.error {
     border-color: rgb(var(--mdui-color-error));
     background: color-mix(in srgb, rgb(var(--mdui-color-error-container)) 35%, rgb(var(--mdui-color-surface-container)));
@@ -415,7 +438,22 @@ mdui-card#status-panel {
     font-size: 0.78rem; margin-bottom: 0.4rem;
 }
 #status-panel .widget-phase { font-size: 0.78rem; }
-#status-panel .widget-bar { display: block; width: 100%; margin-bottom: 0.3rem; }
+/* Wavy determinate indicator — the M3 Expressive signature — rendered by
+   @m3e/web's <m3e-linear-progress-indicator variant="wavy"> (loaded from
+   esm.sh; mdui 2.x has no Expressive components). Its color tokens are
+   bridged to the mdui theme so light/dark follow the same palette. */
+#status-panel m3e-linear-progress-indicator.widget-bar {
+    display: block;
+    width: 100%;
+    margin: 0.15rem 0 0.3rem;
+    --md-sys-color-primary: rgb(var(--mdui-color-primary));
+    --md-sys-color-secondary-container: rgb(var(--mdui-color-surface-container-highest));
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
+}
+@media (prefers-reduced-motion: reduce) {
+    mdui-button, mdui-button-icon, mdui-fab, mdui-chip { transition: none; }
+    mdui-button:active, mdui-button-icon:active, mdui-fab:active { transform: none; }
+}
 #status-panel.structured .widget-action {
     font-family: Consolas, Menlo, monospace; font-size: 0.78rem;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -489,9 +527,18 @@ mdui-list#notif-list {
 mdui-fab#scroll-bottom {
     position: absolute;
     bottom: 1rem; right: var(--col-pad);
-    display: none;
+    transform: scale(0) rotate(-90deg);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease;
+    transition: transform 400ms var(--m3e-spring-spatial), opacity 200ms ease;
 }
-mdui-fab#scroll-bottom.show { display: inline-flex; }
+mdui-fab#scroll-bottom.show {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+    pointer-events: auto;
+}
+mdui-fab#scroll-bottom.show:active { transform: scale(0.9) rotate(0deg); }
 
 /* Turn-time divider */
 .turn-time {
@@ -736,6 +783,10 @@ function stage0Logic(wsUrl: string): string {
     let stopArmed = false, stopArmTimer = null;
     let notifHistory = [];
     let notifOpen = false;
+
+    // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
+    // Pinned version; loaded async so a slow CDN never blocks the app boot.
+    import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -1096,7 +1147,9 @@ function stage0Logic(wsUrl: string): string {
           + '</div>';
         let bar = '';
         if (d.total > 0 && d.done != null) {
-          bar = '<mdui-linear-progress class="widget-bar" max="' + d.total + '" value="' + d.done + '"></mdui-linear-progress>';
+          bar = '<m3e-linear-progress-indicator class="widget-bar" variant="wavy"'
+            + ' value="' + d.done + '" max="' + d.total + '"'
+            + ' aria-label="task progress"></m3e-linear-progress-indicator>';
         }
         const action = d.action ? '<div class="widget-action">↳ ' + escHtml(d.action) + '</div>' : '';
         statusPanel.innerHTML = title + meta + bar + action;
