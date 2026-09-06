@@ -127,7 +127,6 @@ html, body {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0.5rem 1rem;
     background: rgb(var(--mdui-color-surface-container-low));
-    border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface-variant));
 }
@@ -211,24 +210,30 @@ html, body {
     font-family: Consolas, Menlo, "Courier New", monospace;
     font-size: 0.9em;
 }
-/* Code block: nested inside the bubble (outer radius 1rem, bubble padding
-   0.75rem vertical) -> inner radius = shape-corner-small (concentric).
-   Language + copy float as a pill over the top-right corner instead of a
-   full-width header bar, so the code surface stays clean. */
+/* Code block. Language + copy float as a pill over the top-right corner
+   instead of a full-width header bar, so the code surface stays clean.
+   Concentric radii with the pill: block radius = pill half-height (1rem of
+   the 2rem pill) + pill inset (shape-corner-extra-small), so both arcs
+   share a center. */
 .bubble .code-block {
     position: relative;
+    --_pill-inset: var(--mdui-shape-corner-extra-small);
     background: rgb(var(--mdui-color-surface-container-lowest));
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
-    border-radius: var(--mdui-shape-corner-small);
+    border-radius: calc(1rem + var(--_pill-inset));
     overflow: hidden;
     margin: 0.6em 0;
     font-size: 0.9em;
 }
 .bubble .code-head {
-    position: absolute; top: 0.35rem; right: 0.35rem; z-index: 1;
+    position: absolute;
+    top: var(--_pill-inset);
+    right: var(--_pill-inset);
+    height: 2rem;
+    box-sizing: border-box;
+    z-index: 1;
     display: flex; align-items: center; gap: 0.15rem;
     background: rgb(var(--mdui-color-surface-container));
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
+    box-shadow: var(--mdui-elevation-level1);
     border-radius: 999px;
     padding: 0.1rem 0.2rem 0.1rem 0.65rem;
     opacity: 0;
@@ -276,10 +281,12 @@ html, body {
     border-radius: var(--mdui-shape-corner-small);
 }
 .bubble.md th, .bubble.md td {
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
+    border: none;
+    border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
     padding: 0.4em 0.7em;
     text-align: left;
 }
+.bubble.md tr:last-child td { border-bottom: none; }
 .bubble.md th { background: rgb(var(--mdui-color-surface-container)); font-weight: 600; }
 .bubble.md hr {
     border: 0;
@@ -338,14 +345,12 @@ mdui-collapse.tool-call {
     margin: 0.3rem auto;
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container));
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
     overflow: hidden;
     transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: border-radius 350ms var(--m3e-spring-fast);
 }
 mdui-collapse.tool-call[value] { border-radius: 1.125rem; }
 mdui-collapse.tool-call.error {
-    border-color: rgb(var(--mdui-color-error));
     background: color-mix(in srgb, rgb(var(--mdui-color-error-container)) 35%, rgb(var(--mdui-color-surface-container)));
 }
 .tool-call .tool-header {
@@ -392,7 +397,6 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
 }
 .tool-diff {
     padding: 0.4rem 0.85rem 0.4rem;
-    border-top: 1px solid rgb(var(--mdui-color-outline-variant));
     background: rgb(var(--mdui-color-surface-container-lowest));
     font-family: Consolas, Menlo, "Courier New", monospace;
     font-size: 0.82rem;
@@ -404,7 +408,6 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
 .tool-result {
     margin: 0;
     padding: 0.5rem 0.85rem;
-    border-top: 1px solid rgb(var(--mdui-color-outline-variant));
     background: rgb(var(--mdui-color-surface-container-lowest));
     font-family: Consolas, Menlo, "Courier New", monospace;
     font-size: 0.82rem;
@@ -430,7 +433,6 @@ mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); 
     display: flex; gap: 0.5rem; align-items: flex-end;
     padding: 0.75rem var(--col-pad) 1rem;
     background: rgb(var(--mdui-color-surface-container));
-    border-top: 1px solid rgb(var(--mdui-color-outline-variant));
     width: 100%;
     box-sizing: border-box;
 }
@@ -530,7 +532,6 @@ mdui-button-icon#bell.on { color: rgb(var(--mdui-color-primary)); }
 #notif-toggle-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
 }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
 
@@ -713,7 +714,7 @@ export function mduiHtml(wsUrl: string): string {
         <span id="status-model" style="display:none"></span>
         <span id="status-ctx"></span>
         <span class="grow"></span>
-        <mdui-chip id="status-chip" variant="outlined">disconnected</mdui-chip>
+        <mdui-chip id="status-chip" variant="filled">disconnected</mdui-chip>
       </div>
       <div id="ctx-bar"><div id="ctx-fill"></div></div>
     </header>
