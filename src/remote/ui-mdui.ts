@@ -65,9 +65,6 @@ const CSS = `
    Only the send button needs our own transform spring for the
    send<->stop 90deg swing. */
 m3e-icon-button#send-btn {
-    transform: rotate(var(--send-rot, 0deg));
-    transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
-    transition: transform 350ms var(--m3e-spring-fast);
     /* Capsule, as tall as the input it sits beside: stretch to the
        composer row and widen past the height so the full-radius shape
        reads as a stadium, not a circle. Height tracks the autosize input
@@ -77,7 +74,14 @@ m3e-icon-button#send-btn {
     --m3e-icon-button-container-height: 100%;
 }
 m3e-icon-button#send-btn:active {
-    transform: rotate(var(--send-rot, 0deg)) scale(0.94);
+    transform: scale(0.94);
+}
+/* Running swings the GLYPH 90deg, not the button — a rotated capsule
+   stands on end (84px tall), which breaks the input-height match. The
+   component's ::slotted transform var keeps the spring swing. */
+m3e-icon-button#send-btn.running,
+m3e-icon-button#send-btn.armed {
+    --_icon-button-icon-transform: rotate(90deg);
 }
 
 /* mdui 2.x does not load the Material Icons font itself — without this,
@@ -630,12 +634,10 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
    loud accent. send<->stop swings 90deg on the spring token; running/armed
    retarget the primary tokens to the error palette (armed is full error). */
 m3e-icon-button#send-btn.running {
-    --send-rot: 90deg;
     --md-sys-color-primary: rgb(var(--mdui-color-error-container));
     --md-sys-color-on-primary: rgb(var(--mdui-color-on-error-container));
 }
 m3e-icon-button#send-btn.armed {
-    --send-rot: 90deg;
     --md-sys-color-primary: rgb(var(--mdui-color-error));
     --md-sys-color-on-primary: rgb(var(--mdui-color-on-error));
 }
