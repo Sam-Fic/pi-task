@@ -5,6 +5,7 @@ import {addClient, removeClient, sendTo} from './broadcast.js'
 import {answerPrompt} from './bridge.js'
 import {getState, snapshot} from './session-state.js'
 import {isClientMessage} from './protocol.js'
+import type {ModelsMessage} from './protocol.js'
 import {swJs} from './sw.js'
 import {publicKey, addSubscription, getSubscriptions, logPush} from './push.js'
 import type {PushSubscriptionJSON} from './push.js'
@@ -132,7 +133,11 @@ export async function startServer(
     onMessage: MessageCallback,
     getHtml: (wsUrl: string) => string,
     onInterrupt?: () => void,
-    onClearHeld?: () => void
+    onClearHeld?: () => void,
+    onSetModel?: (spec: string) => void,
+    /** Fresh model catalogue for the picker, read at connect time. Returning
+     *  null (no live ctx yet) just omits the frame. */
+    getModels?: () => ModelsMessage | null
 ): Promise<ServerHandle> {
     const ips = getLocalIPs()
     const ip = ips.primary
@@ -232,6 +237,10 @@ export async function startServer(
         handle.onFirstConnect = null
         // One authoritative snapshot — the client replaces its whole view with it.
         sendTo(ws, snapshot())
+        // The switchable-model list rides alongside: the snapshot carries the
+        // current model's NAME for the chip; this frame feeds the picker menu.
+        const models = getModels?.()
+        if (models) sendTo(ws, models)
 
         ws.on('message', data => {
             let msg: unknown
@@ -251,6 +260,10 @@ export async function startServer(
             }
             if (msg.type === 'clear_held') {
                 onClearHeld?.()
+                return
+            }
+            if (msg.type === 'set_model') {
+                onSetModel?.(msg.spec)
                 return
             }
             // type === 'message': ignore while a prompt is pending (composer is

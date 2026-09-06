@@ -180,7 +180,31 @@ html, body {
 }
 #app-bar .grow { flex: 1; }
 /* The model name takes the old title slot; falls back to the app name
-   (muted) before the first snapshot reports a model. */
+   (muted) before the first snapshot reports a model. It doubles as the
+   picker trigger: a tonal pill (hierarchy by color, never a hairline
+   stroke) whose caret flips while the menu is open. */
+#model-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.05rem;
+    /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
+       names still ellipsize when the row genuinely runs out of room. */
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 0.2rem 0.3rem 0.2rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 7%, transparent);
+    transition: background 200ms;
+}
+#model-picker:hover {
+    background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 13%, transparent);
+}
+#model-picker.open {
+    background: rgb(var(--mdui-color-secondary-container));
+}
 #status-model {
     /* Information, not a wordmark: the model name in the platform's UI font
        (the old rounded display face was leftover title styling). */
@@ -189,13 +213,23 @@ html, body {
     letter-spacing: 0.01em;
     line-height: 1.4;
     color: rgb(var(--mdui-color-on-surface));
-    /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
-       names still ellipsize when the row genuinely runs out of room. */
-    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+#model-picker.open #status-model {
+    color: rgb(var(--mdui-color-on-secondary-container));
+}
+#model-caret {
+    --m3e-icon-size: 1.4rem;
+    flex-shrink: 0;
+    color: rgb(var(--mdui-color-on-surface-variant));
+    transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#model-picker.open #model-caret {
+    transform: rotate(180deg);
+    color: rgb(var(--mdui-color-on-secondary-container));
 }
 #status-model.fallback {
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -762,6 +796,94 @@ mdui-list#notif-list {
     font-size: 0.85rem;
 }
 
+/* Model picker menu (opened from the app-bar pill). Same surface recipe as
+   the notif panel: elevated tonal container, no stroke; rows are full-
+   rounded (M3E's pill list shape) and the current model reads as a
+   secondary-container selection rather than a check on a blank row. */
+#model-menu {
+    position: fixed;
+    top: calc(var(--safe-top) + 4rem);
+    left: 1rem;
+    width: min(320px, calc(100vw - 2rem));
+    max-height: 55vh;
+    background: rgb(var(--mdui-color-surface-container-high));
+    border-radius: var(--mdui-shape-corner-medium);
+    box-shadow: var(--mdui-elevation-level3);
+    padding: 0.5rem;
+    box-sizing: border-box;
+    display: none;
+    flex-direction: column;
+    z-index: 60;
+}
+#model-menu.open { display: flex; }
+#model-menu-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: rgb(var(--mdui-color-on-surface-variant));
+    padding: 0.3rem 0.75rem 0.55rem;
+}
+#model-list {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-height: 0;
+}
+.model-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 999px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 150ms;
+}
+.model-row:hover {
+    background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 8%, transparent);
+}
+.model-row.current {
+    background: rgb(var(--mdui-color-secondary-container));
+}
+.model-row.current:hover {
+    background: color-mix(in srgb, rgb(var(--mdui-color-secondary-container)) 80%, rgb(var(--mdui-color-on-secondary-container)));
+}
+.model-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.model-row-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: rgb(var(--mdui-color-on-surface));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.model-row-spec {
+    font-size: 0.74rem;
+    color: rgb(var(--mdui-color-on-surface-variant));
+}
+.model-row.current .model-row-name,
+.model-row.current .model-row-spec {
+    color: rgb(var(--mdui-color-on-secondary-container));
+}
+.model-row m3e-icon {
+    --m3e-icon-size: 1.35rem;
+    flex-shrink: 0;
+    color: rgb(var(--mdui-color-on-secondary-container));
+}
+#model-empty {
+    padding: 1rem;
+    color: rgb(var(--mdui-color-on-surface-variant));
+    text-align: center;
+    font-size: 0.85rem;
+}
+
 /* Cmd suggestions (above input) */
 #cmd-suggestions {
     position: absolute;
@@ -929,7 +1051,10 @@ export function mduiHtml(wsUrl: string): string {
         <div class="bar-stack">
           <div id="app-bar">
             <span id="status-dot"></span>
-            <span id="status-model">π-task remote</span>
+            <div id="model-picker" role="button" tabindex="0" aria-haspopup="menu" aria-label="切换模型">
+              <span id="status-model">π-task remote</span>
+              <m3e-icon id="model-caret" name="arrow_drop_down" filled></m3e-icon>
+            </div>
             <span id="status-ctx"></span>
             <span class="grow"></span>
             <span id="status-chip">disconnected</span>
@@ -982,6 +1107,14 @@ export function mduiHtml(wsUrl: string): string {
       <mdui-switch id="thinking-collapse"></mdui-switch>
     </div>
     <mdui-list id="notif-list"></mdui-list>
+  </div>
+
+  <!-- Model picker menu: opened from the app-bar name, fed by the models
+       frame (authed catalogue + current spec). Rows send set_model; the
+       server answers with a fresh models frame that ticks the new row. -->
+  <div id="model-menu" role="menu" aria-hidden="true">
+    <div id="model-menu-title">切换模型</div>
+    <div id="model-list"></div>
   </div>
 
   <!-- Prompt dialog: shown when pi asks for user input -->
@@ -1052,6 +1185,9 @@ function stage0Logic(wsUrl: string): string {
     const notifToggle  = document.getElementById('notif-toggle');
     const thinkingCollapse = document.getElementById('thinking-collapse');
     const notifTitle   = document.getElementById('notif-title');
+    const modelPicker  = document.getElementById('model-picker');
+    const modelMenu    = document.getElementById('model-menu');
+    const modelList    = document.getElementById('model-list');
 
     // ───────────── State ─────────────
     let connected = false, agentRunning = false, modelName = '';
@@ -1069,6 +1205,8 @@ function stage0Logic(wsUrl: string): string {
     let stopArmed = false, stopArmTimer = null;
     let notifHistory = [];
     let notifOpen = false;
+    let modelCatalog = {current: null, models: []};
+    let modelMenuOpen = false;
 
     // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
     // Pinned version; loaded async so a slow CDN never blocks the app boot.
@@ -1093,6 +1231,10 @@ function stage0Logic(wsUrl: string): string {
                 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'],
         arrow_downward: ['m20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z',
                          'm20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z'],
+        arrow_drop_down: ['M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z',
+                          'M7 10l5 5 5-5z'],
+        check: ['M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+                'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'],
         settings: ['M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.566.566 0 0 0-.18-.03c-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
                    'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z']
       };
@@ -1766,6 +1908,7 @@ function stage0Logic(wsUrl: string): string {
     }
     bell.addEventListener('click', (e) => {
       e.stopPropagation();
+      setModelMenuOpen(false);
       setNotifOpen(!notifOpen);
     });
     document.addEventListener('click', (e) => {
@@ -1775,6 +1918,67 @@ function stage0Logic(wsUrl: string): string {
     });
     notifToggle.addEventListener('change', togglePush);
     updateBell();
+
+    // ───────────── Model picker menu ─────────────
+    // Fed by the server's models frame (on connect, on session_start and after
+    // each switch). Choosing a row sends set_model; the fresh frame that comes
+    // back moves the tick — no optimistic check, so a rejected switch can't
+    // leave the menu lying.
+    function escAttr(s) {
+      return escHtml(s).replace(/"/g, '&quot;');
+    }
+    function renderModelMenu() {
+      if (!modelCatalog.models.length) {
+        modelList.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
+        return;
+      }
+      let html = '';
+      for (const md of modelCatalog.models) {
+        const cur = md.spec === modelCatalog.current;
+        const provider = md.spec.split('/')[0] || md.spec;
+        html += '<div class="model-row' + (cur ? ' current' : '') + '" role="menuitemradio"'
+              + ' aria-checked="' + (cur ? 'true' : 'false') + '"'
+              + ' data-spec="' + escAttr(md.spec) + '">'
+              + '<div class="model-row-main">'
+              + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
+              + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
+              + '</div>'
+              + (cur ? '<m3e-icon name="check"></m3e-icon>' : '')
+              + '</div>';
+      }
+      modelList.innerHTML = html;
+    }
+    function setModelMenuOpen(open) {
+      if (open) setNotifOpen(false);
+      modelMenuOpen = open;
+      modelMenu.classList.toggle('open', open);
+      modelMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
+      modelPicker.classList.toggle('open', open);
+      if (open) renderModelMenu();
+    }
+    modelPicker.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setModelMenuOpen(!modelMenuOpen);
+    });
+    modelPicker.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setModelMenuOpen(!modelMenuOpen);
+      }
+    });
+    modelList.addEventListener('click', (e) => {
+      const row = e.target && e.target.closest ? e.target.closest('.model-row') : null;
+      if (!row) return;
+      const spec = row.getAttribute('data-spec');
+      if (!spec || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'set_model', spec }));
+      const chosen = modelCatalog.models.find((x) => x.spec === spec);
+      showToast(chosen ? '切换模型：' + chosen.name : '切换模型…', 'info');
+      setModelMenuOpen(false);
+    });
+    document.addEventListener('click', (e) => {
+      if (modelMenuOpen && !modelMenu.contains(e.target)) setModelMenuOpen(false);
+    });
 
     // ───────────── Stage 3: Command autocomplete ─────────────
     const COMMANDS = [
@@ -2094,6 +2298,17 @@ function stage0Logic(wsUrl: string): string {
           refreshComposer(); setSendBtn();
           break;
         }
+        case 'models':
+          modelCatalog = {current: m.current || null, models: m.models || []};
+          // A switch changes the session model without a fresh agent run, so
+          // the chip could keep the old name until the next message: re-sync
+          // it from the catalogue whenever the current spec is known.
+          {
+            const cur = modelCatalog.models.find((x) => x.spec === modelCatalog.current);
+            if (cur) setModelName(cur.name);
+          }
+          if (modelMenuOpen) renderModelMenu();
+          break;
         case 'agent_start':
           autoScroll = true;
           streamText = '';

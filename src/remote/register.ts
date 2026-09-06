@@ -15,6 +15,8 @@ import {
 import {setupEvents} from './events.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
+import {resolveModel, specOf} from '../shared/model-resolve.js'
+import type {ModelsMessage} from './protocol.js'
 import {qrLines} from './qr.js'
 import {startServer, formatAddresses} from './server.js'
 import {
@@ -78,6 +80,30 @@ export function routePlainLine(
 }
 
 export function registerRemote(pi: ExtensionAPI): void {
+    // The browser's model picker: every authed model in the registry (never
+    // getAll() — an unauthed one cannot answer, same rule as liveCatalog), plus
+    // the session's current as a canonical spec so the menu can tick a row.
+    // null = nothing to show (no live ctx yet, or a registry that cannot
+    // answer because its ctx went stale).
+    function collectModels(): ModelsMessage | null {
+        const ctx = getBridge().currentCtx
+        if (!ctx) return null
+        try {
+            const available = ctx.modelRegistry.getAvailable()
+            return {
+                type: 'models',
+                current: ctx.model ? specOf(ctx.model) : null,
+                models: available.map(m => ({spec: specOf(m), name: m.name}))
+            }
+        } catch {
+            return null
+        }
+    }
+    function broadcastModels(): void {
+        const frame = collectModels()
+        if (frame) getBridge().broadcast(frame)
+    }
+
     async function ensureServer(): Promise<ServerHandle> {
         if (S.server) return S.server
         S.server = await startServer(
@@ -104,7 +130,32 @@ export function registerRemote(pi: ExtensionAPI): void {
             },
             wsUrl => html(wsUrl),
             interruptAgent,
-            clearHeldInput
+            clearHeldInput,
+            // Remote-initiated model switch. pi.setModel persists the choice
+            // session-globally and re-clamps thinking; a rejected handle must
+            // not silently no-op, so each outcome announces itself.
+            spec => {
+                const ctx = getBridge().currentCtx
+                const resolved = ctx ? resolveModel(ctx, spec) : undefined
+                if (!resolved) {
+                    publishNotify(`Unknown model: ${spec}`, 'warning')
+                    return
+                }
+                void pi
+                    .setModel(resolved.handle)
+                    .then(ok => {
+                        if (!ok) {
+                            publishNotify(`Model switch to ${resolved.name} failed`, 'error')
+                            return
+                        }
+                        publishNotify(`Model: ${resolved.name}`, 'info')
+                        broadcastModels()
+                    })
+                    .catch(err =>
+                        publishNotify(`Model switch failed: ${(err as Error).message}`, 'error')
+                    )
+            },
+            collectModels
         )
         // Hands-off HTTPS: point Tailscale serve at our port so phones get a
         // secure context. Best-effort — any failure degrades to the http URL.
@@ -137,6 +188,9 @@ export function registerRemote(pi: ExtensionAPI): void {
         ) {
             bridge.currentCtx = makeShimmedCtx(ctx)
         }
+        // Keep open browsers' pickers fresh: a new session re-seeds the ctx the
+        // catalogue is read from (and /new can run while the server is up).
+        broadcastModels()
         if (getConfig().remote) {
             // Optional feature: a bind failure must never take pi down. Degrade
             // to a one-line warning and keep the agent running without remote.

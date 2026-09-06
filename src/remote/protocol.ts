@@ -50,6 +50,17 @@ export interface WidgetData {
     action?: string
 }
 
+/** The model picker's data: every available model plus the session's current.
+ *  Broadcast on session_start, after a successful switch, and to fresh
+ *  connections (the snapshot carries the current model NAME already; this
+ *  frame adds the switchable list). */
+export interface ModelsMessage {
+    type: 'models'
+    /** Canonical `provider/id` of the session's model, null when unknown. */
+    current: string | null
+    models: {spec: string; name: string}[]
+}
+
 /** The single task-widget slot. `lines: null` clears it. `data` carries the
  *  structured view (null when clearing or when a producer only has text). */
 export interface WidgetMessage {
@@ -109,6 +120,7 @@ export type ServerMessage =
     | HeldMessage
     | ContextMessage
     | ResetMessage
+    | ModelsMessage
     | import('./session-state.js').SnapshotMessage
 
 /** Browser → server messages. */
@@ -129,8 +141,13 @@ export interface ClientInterrupt {
 export interface ClientClearHeld {
     type: 'clear_held'
 }
+/** Switch the session model (browser model picker). */
+export interface ClientSetModel {
+    type: 'set_model'
+    spec: string
+}
 export type ClientMessage =
-    ClientChatMessage | ClientPromptAnswer | ClientInterrupt | ClientClearHeld
+    ClientChatMessage | ClientPromptAnswer | ClientInterrupt | ClientClearHeld | ClientSetModel
 
 export function isClientMessage(x: unknown): x is ClientMessage {
     if (typeof x !== 'object' || x === null) return false
@@ -141,5 +158,6 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     if (m.type === 'prompt_answer') {
         return typeof m.id === 'string' && (m.value === undefined || typeof m.value === 'string')
     }
+    if (m.type === 'set_model') return typeof m.spec === 'string' && m.spec.length > 0
     return false
 }

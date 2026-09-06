@@ -540,3 +540,88 @@ test('plain message is ignored while a prompt is pending', async () => {
     srv.stop()
     reset()
 })
+
+// The model picker rides two server behaviors: the connect-time models frame
+// feeding the menu, and set_model reaching the switcher callback. A rejected
+// or empty spec must not reach the callback — validation is isClientMessage's.
+test('models frame is sent to a fresh connection when getModels answers', async () => {
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        undefined,
+        () => ({
+            type: 'models',
+            current: 'p/a',
+            models: [
+                {spec: 'p/a', name: 'A'},
+                {spec: 'p/b', name: 'B'}
+            ]
+        })
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    const frame = await once(ws, 'models')
+    expect(frame.current).toBe('p/a')
+    expect(frame.models).toEqual([
+        {spec: 'p/a', name: 'A'},
+        {spec: 'p/b', name: 'B'}
+    ])
+    ws.close()
+    srv.stop()
+})
+
+test('no models frame when getModels answers null (no live ctx yet)', async () => {
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        undefined,
+        () => null
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    const seen: string[] = []
+    ws.on('message', d => seen.push((JSON.parse(d.toString()) as {type: string}).type))
+    await new Promise(r => ws.on('open', r))
+    await new Promise(r => setTimeout(r, 50))
+    expect(seen).toEqual(['snapshot'])
+    ws.close()
+    srv.stop()
+})
+
+test('set_model frame invokes the onSetModel callback with the spec', async () => {
+    const specs: string[] = []
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        spec => specs.push(spec)
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    await new Promise(r => ws.on('open', r))
+    ws.send(JSON.stringify({type: 'set_model', spec: 'openai/gpt-4o'}))
+    await new Promise(r => setTimeout(r, 50))
+    expect(specs).toEqual(['openai/gpt-4o'])
+    ws.close()
+    srv.stop()
+})
+
+test('set_model with an empty spec is dropped before the callback', async () => {
+    let calls = 0
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        () => calls++
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    await new Promise(r => ws.on('open', r))
+    ws.send(JSON.stringify({type: 'set_model', spec: ''}))
+    await new Promise(r => setTimeout(r, 50))
+    expect(calls).toBe(0)
+    ws.close()
+    srv.stop()
+})
