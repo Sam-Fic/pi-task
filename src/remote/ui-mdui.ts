@@ -249,10 +249,11 @@ html, body {
     padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
 /* The bar paints neutral (matching the #app-bar row); it also must clear
    the notch. mdui tokens are bare RGB triplets — override with triplet
-   vars, never rgb()-wrapped values. */
+   vars, never rgb()-wrapped values, and never self-referentially (a var
+   citing itself turns guaranteed-invalid down the whole subtree, which is
+   how the app-bar icons once ended up at 1.7:1 contrast). */
 mdui-top-app-bar#top-bar {
     --mdui-color-surface: var(--mdui-color-surface-container);
-    --mdui-color-on-surface: var(--mdui-color-on-surface);
     --z-index: 30;
     width: 100%;
 }
