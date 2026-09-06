@@ -54,6 +54,16 @@ const BUNDLE_IMPORTS = `
 const ICON_IMPORTS = ''
 
 const CSS = `
+/* mdui 2.x does not load the Material Icons font itself — without this,
+   icon="..." attributes render as raw ligature text ("send", "close"...).
+   Load it from the same CDN as the mdui bundle so offline/LAN usage
+   never depends on Google Fonts. */
+@font-face {
+    font-family: 'Material Icons';
+    font-style: normal;
+    font-weight: 400;
+    src: url(https://cdn.jsdelivr.net/npm/material-icons@1.13.12/iconfont/material-icons.woff2) format('woff2');
+}
 :root {
     color-scheme: light dark;
     --chat-max-width: 920px;
@@ -69,8 +79,7 @@ html, body {
 #root {
     display: grid;
     grid-template-rows: auto 1fr auto;
-    height: 100vh;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
 }
 #app-bar {
     display: flex;
@@ -89,20 +98,7 @@ html, body {
     flex: 1;
 }
 #theme-toggle {
-    background: transparent;
-    border: none;
     color: rgb(var(--mdui-color-on-surface-variant));
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s;
-}
-#theme-toggle:hover {
-    background: rgb(var(--mdui-color-surface-container-highest));
 }
 #status-bar {
     display: flex; align-items: center; gap: 0.75rem;
@@ -191,7 +187,7 @@ html, body {
     background: rgb(var(--mdui-color-surface-container-lowest));
     color: rgb(var(--mdui-color-on-surface));
     padding: 0.75em 1em;
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: var(--mdui-shape-corner-small);
     overflow-x: auto;
     margin: 0.6em 0;
     line-height: 1.4;
@@ -219,17 +215,18 @@ html, body {
     margin: 1em 0;
 }
 
-/* Thinking <details> (Stage 2) */
-.thinking {
+/* Thinking (Stage 2, mdui-collapse) */
+mdui-collapse.thinking {
+    display: block;
     max-width: var(--chat-max-width);
     width: 100%;
     margin: 0.25rem auto;
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container-low));
+    overflow: hidden;
 }
-.thinking > summary {
+.thinking .thinking-header {
     cursor: pointer;
-    list-style: none;
     padding: 0.5rem 0.85rem;
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -237,18 +234,14 @@ html, body {
     user-select: none;
     border-radius: var(--mdui-shape-corner-medium);
 }
-.thinking > summary::-webkit-details-marker { display: none; }
-.thinking > summary::before {
+.thinking .thinking-header::before {
     content: '›';
     display: inline-block;
     margin-right: 0.4em;
     transition: transform 0.15s;
     color: rgb(var(--mdui-color-on-surface-variant));
 }
-.thinking[open] > summary::before { transform: rotate(90deg); }
-.thinking:hover > summary {
-    background: rgb(var(--mdui-color-surface-container-high));
-}
+mdui-collapse.thinking[value] .thinking-header::before { transform: rotate(90deg); }
 .thinking-body {
     margin: 0;
     padding: 0.5rem 1rem 0.85rem;
@@ -262,22 +255,23 @@ html, body {
     overflow-y: auto;
 }
 
-/* Tool-call <details> (Stage 2) */
-.tool-call {
+/* Tool-call (Stage 2, mdui-collapse) */
+mdui-collapse.tool-call {
+    display: block;
     max-width: var(--chat-max-width);
     width: 100%;
     margin: 0.3rem auto;
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container));
     border: 1px solid rgb(var(--mdui-color-outline-variant));
+    overflow: hidden;
 }
-.tool-call.error {
+mdui-collapse.tool-call.error {
     border-color: rgb(var(--mdui-color-error));
     background: color-mix(in srgb, rgb(var(--mdui-color-error-container)) 35%, rgb(var(--mdui-color-surface-container)));
 }
-.tool-call > summary {
+.tool-call .tool-header {
     cursor: pointer;
-    list-style: none;
     padding: 0.6rem 0.85rem;
     display: flex;
     align-items: center;
@@ -286,18 +280,14 @@ html, body {
     user-select: none;
     border-radius: var(--mdui-shape-corner-medium);
 }
-.tool-call > summary::-webkit-details-marker { display: none; }
-.tool-call > summary::before {
+.tool-call .tool-header::before {
     content: '›';
     display: inline-block;
     transition: transform 0.15s;
     color: rgb(var(--mdui-color-on-surface-variant));
     flex-shrink: 0;
 }
-.tool-call[open] > summary::before { transform: rotate(90deg); }
-.tool-call:hover > summary {
-    background: rgb(var(--mdui-color-surface-container-high));
-}
+mdui-collapse.tool-call[value] .tool-header::before { transform: rotate(90deg); }
 .tool-label {
     flex: 1;
     font-family: Consolas, Menlo, "Courier New", monospace;
@@ -364,42 +354,9 @@ html, body {
     max-width: var(--chat-max-width); margin: 0 auto; width: 100%;
     box-sizing: border-box;
 }
-#input-bar textarea { flex: 1; }
-#input {
-    background: rgb(var(--mdui-color-surface-container-highest));
-    color: rgb(var(--mdui-color-on-surface));
-    border: 1px solid rgb(var(--mdui-color-outline));
-    border-radius: 1.5rem;
-    padding: 0.625rem 1rem;
-    font: inherit;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    resize: none;
-    max-height: 12rem;
-    min-height: 1.5rem;
-    outline: none;
-    box-sizing: border-box;
-}
-#input:focus {
-    border-color: rgb(var(--mdui-color-primary));
-}
-#input:disabled {
-    opacity: 0.5;
-}
-#send-btn {
-    width: 2.75rem; height: 2.75rem;
-    background: rgb(var(--mdui-color-primary-container));
-    color: rgb(var(--mdui-color-on-primary-container));
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s;
-}
-#send-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+#input { flex: 1; min-width: 0; }
 #send-btn.running {
-    background: rgb(var(--mdui-color-error-container));
-    color: rgb(var(--mdui-color-on-error-container));
+    color: rgb(var(--mdui-color-error));
 }
 #reconnect-overlay {
     position: fixed; inset: 0;
@@ -428,24 +385,17 @@ html, body {
     flex: 1; font-style: italic;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#held-bar button {
-    background: transparent; border: none;
+#held-clear {
     color: rgb(var(--mdui-color-on-tertiary-container));
-    cursor: pointer; padding: 0.2rem; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
 }
-#held-bar button:hover { background: rgba(0,0,0,0.08); }
 
-#status-panel {
+mdui-card#status-panel {
     display: none;
     box-sizing: border-box;
     max-width: var(--chat-max-width);
     width: 100%;
     margin: 0.3rem auto;
     padding: 0.6rem 0.85rem;
-    background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: var(--mdui-shape-corner-medium);
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
     font-size: 0.85rem;
     color: rgb(var(--mdui-color-on-surface));
 }
@@ -455,22 +405,8 @@ html, body {
     color: rgb(var(--mdui-color-on-surface-variant));
     font-size: 0.78rem; margin-bottom: 0.4rem;
 }
-#status-panel.structured .widget-phase {
-    padding: 0.1rem 0.5rem;
-    border-radius: var(--mdui-shape-corner-extra-small);
-    background: rgb(var(--mdui-color-primary-container));
-    color: rgb(var(--mdui-color-on-primary-container));
-    font-weight: 500;
-}
-#status-panel.structured .widget-bar {
-    height: 4px; background: rgb(var(--mdui-color-surface-container-highest));
-    border-radius: 2px; overflow: hidden; margin-bottom: 0.3rem;
-}
-#status-panel.structured .widget-bar-fill {
-    height: 100%;
-    background: rgb(var(--mdui-color-primary));
-    transition: width 0.3s;
-}
+#status-panel .widget-phase { font-size: 0.78rem; }
+#status-panel .widget-bar { display: block; width: 100%; margin-bottom: 0.3rem; }
 #status-panel.structured .widget-action {
     font-family: Consolas, Menlo, monospace; font-size: 0.78rem;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -478,17 +414,11 @@ html, body {
 }
 
 /* Bell + notif dropdown */
-#bell {
+mdui-button-icon#bell {
     position: fixed; top: 0.75rem; right: 4.5rem; z-index: 50;
-    width: 2.5rem; height: 2.5rem;
-    border-radius: 50%; border: none;
-    background: transparent;
     color: rgb(var(--mdui-color-on-surface));
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s;
 }
-#bell:hover { background: rgb(var(--mdui-color-surface-container-highest)); }
-#bell.on { color: rgb(var(--mdui-color-primary)); }
+mdui-button-icon#bell.on { color: rgb(var(--mdui-color-primary)); }
 #notif-panel {
     position: fixed; top: 3.5rem; right: 1rem;
     width: 320px; max-height: 60vh;
@@ -508,38 +438,15 @@ html, body {
     border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
 }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
-#notif-toggle {
-    padding: 0.3rem 0.8rem; border-radius: var(--mdui-shape-corner-small);
-    border: 1px solid rgb(var(--mdui-color-outline));
-    color: rgb(var(--mdui-color-on-surface));
-    background: rgb(var(--mdui-color-surface));
-    cursor: pointer; font-size: 0.85rem;
-}
-#notif-toggle.on {
-    background: rgb(var(--mdui-color-primary)); color: rgb(var(--mdui-color-on-primary));
-    border-color: rgb(var(--mdui-color-primary));
-}
-#notif-list {
+
+mdui-list#notif-list {
     overflow-y: auto; flex: 1;
     font-size: 0.85rem;
+    padding: 0;
+    background: transparent;
 }
-.notif-item {
-    display: flex; gap: 0.5rem; align-items: center;
-    padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
-}
-.notif-item:last-child { border-bottom: none; }
-.notif-dot {
-    width: 0.5rem; height: 0.5rem; border-radius: 50%;
-    background: rgb(var(--mdui-color-primary)); flex-shrink: 0;
-}
-.notif-item.warning .notif-dot { background: rgb(var(--mdui-color-error)); }
-.notif-item.error .notif-dot { background: rgb(var(--mdui-color-error)); }
-.notif-msg { flex: 1; word-wrap: break-word; min-width: 0; }
-.notif-time {
-    font-size: 0.7rem; color: rgb(var(--mdui-color-on-surface-variant));
-    flex-shrink: 0;
-}
+.notif-item { word-wrap: break-word; white-space: normal; }
+.notif-item.warning, .notif-item.error { color: rgb(var(--mdui-color-error)); }
 #notif-empty {
     padding: 1rem;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -560,40 +467,19 @@ html, body {
     max-height: 14rem;
     overflow-y: auto;
 }
-.cmd-item {
-    padding: 0.55rem 0.85rem;
+#cmd-suggestions mdui-list { padding: 0; }
+#cmd-suggestions mdui-list-item {
     cursor: pointer;
-    display: flex; gap: 0.75rem; align-items: baseline;
-    border-bottom: 1px solid rgb(var(--mdui-color-outline-variant));
+    font-size: 0.9rem;
 }
-.cmd-item:last-child { border-bottom: none; }
-.cmd-item:hover, .cmd-item.active {
-    background: rgb(var(--mdui-color-surface-container-highest));
-}
-.cmd-item .name {
-    font-family: Consolas, Menlo, monospace;
-    font-weight: 600; color: rgb(var(--mdui-color-primary));
-    flex-shrink: 0;
-}
-.cmd-item .desc { color: rgb(var(--mdui-color-on-surface-variant)); font-size: 0.85rem; }
 
-/* Scroll-to-bottom button */
-#scroll-bottom {
+/* Scroll-to-bottom (mdui-fab) */
+mdui-fab#scroll-bottom {
     position: absolute;
     bottom: 1rem; right: 1rem;
-    width: 2.5rem; height: 2.5rem;
-    border-radius: 50%;
-    background: rgb(var(--mdui-color-primary-container));
-    color: rgb(var(--mdui-color-on-primary-container));
-    border: none;
-    box-shadow: var(--mdui-elevation-level2);
-    cursor: pointer;
     display: none;
-    align-items: center; justify-content: center;
-    transition: transform 0.15s;
 }
-#scroll-bottom.show { display: flex; }
-#scroll-bottom:hover { transform: translateY(-1px); }
+mdui-fab#scroll-bottom.show { display: inline-flex; }
 
 /* Turn-time divider */
 .turn-time {
@@ -621,61 +507,28 @@ html, body {
     box-sizing: border-box;
 }
 
-/* Bubble copy button */
+/* Bubble copy button (mdui-button-icon) */
 .copy-btn {
     position: absolute;
-    top: 0.4rem; right: 0.4rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--mdui-shape-corner-extra-small);
-    border: 1px solid rgb(var(--mdui-color-outline-variant));
-    background: rgb(var(--mdui-color-surface-container));
-    color: rgb(var(--mdui-color-on-surface-variant));
-    cursor: pointer;
-    font-size: 0.7rem;
+    top: 0.2rem; right: 0.2rem;
     opacity: 0;
     transition: opacity 0.15s;
 }
 .msg:hover .copy-btn { opacity: 1; }
-.copy-btn.copied {
-    color: rgb(var(--mdui-color-primary));
-    border-color: rgb(var(--mdui-color-primary));
-}
+.copy-btn.copied { color: rgb(var(--mdui-color-primary)); }
 
-/* Prompt card */
-#prompt-card {
-    position: fixed; inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    display: none;
-    align-items: center; justify-content: center;
-    z-index: 100;
-    padding: 1rem;
-}
-#prompt-card.show { display: flex; }
-#prompt-card .card {
-    background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: var(--mdui-shape-corner-large);
-    padding: 1.25rem;
-    max-width: 560px;
-    width: 100%;
-    box-shadow: var(--mdui-elevation-level3);
-    display: flex; flex-direction: column; gap: 0.85rem;
-    max-height: 80vh;
-    overflow-y: auto;
-}
-#prompt-card .q-label {
-    color: rgb(var(--mdui-color-primary));
-    font-weight: 600;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
+/* Prompt dialog (mdui-dialog).
+   Concentric radii: dialog body padding 24px, dialog corner 28px
+   -> inner elements sit 4px inside their container -> shape-corner-small. */
+#prompt-card { --mdui-shape-corner: var(--mdui-shape-corner-extra-large); }
 #prompt-card .q { font-size: 0.95rem; line-height: 1.5; }
 #prompt-card .rec-panel {
     display: none;
+    margin-top: 0.85rem;
     background: rgb(var(--mdui-color-secondary-container));
     color: rgb(var(--mdui-color-on-secondary-container));
     padding: 0.75rem;
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: var(--mdui-shape-corner-small);
 }
 #prompt-card .rec-label {
     font-size: 0.72rem;
@@ -692,85 +545,12 @@ html, body {
 }
 #prompt-card .rec-text.md p:first-child { margin-top: 0; }
 #prompt-card .rec-text.md p:last-child { margin-bottom: 0; }
-#prompt-card #prompt-input {
-    display: none;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.6rem 0.8rem;
-    border-radius: var(--mdui-shape-corner-medium);
-    border: 1px solid rgb(var(--mdui-color-outline));
-    background: rgb(var(--mdui-color-surface));
-    color: rgb(var(--mdui-color-on-surface));
-    font: inherit; font-size: 0.9rem;
-    line-height: 1.5;
-    resize: vertical;
-}
-#prompt-card .row {
+#prompt-input { width: 100%; margin-top: 0.85rem; }
+#prompt-buttons {
     display: flex; gap: 0.5rem; flex-wrap: wrap;
     justify-content: flex-end;
 }
-#prompt-card .row.stacked { flex-direction: column; align-items: stretch; }
-#prompt-card .row button {
-    padding: 0.55rem 1rem;
-    border-radius: var(--mdui-shape-corner-medium);
-    border: 1px solid rgb(var(--mdui-color-outline));
-    background: rgb(var(--mdui-color-surface));
-    color: rgb(var(--mdui-color-on-surface));
-    cursor: pointer;
-    font: inherit; font-size: 0.9rem;
-    transition: background 0.15s;
-    text-align: left;
-}
-#prompt-card .row button:hover { background: rgb(var(--mdui-color-surface-container-highest)); }
-#prompt-card .row button.primary {
-    background: rgb(var(--mdui-color-primary));
-    color: rgb(var(--mdui-color-on-primary));
-    border-color: rgb(var(--mdui-color-primary));
-}
-#prompt-card .row button.secondary {
-    background: rgb(var(--mdui-color-secondary-container));
-    color: rgb(var(--mdui-color-on-secondary-container));
-    border-color: transparent;
-}
-#prompt-card .row button.cancel {
-    background: rgb(var(--mdui-color-error-container));
-    color: rgb(var(--mdui-color-on-error-container));
-    border-color: transparent;
-    font-size: 0.85rem;
-}
-#prompt-card .row button.armed {
-    background: rgb(var(--mdui-color-error));
-    color: rgb(var(--mdui-color-on-error));
-}
-
-/* Toast stack */
-#toast-stack {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
-    right: 1rem;
-    display: flex; flex-direction: column; gap: 0.5rem;
-    z-index: 300;
-    pointer-events: none;
-}
-.toast {
-    background: rgb(var(--mdui-color-inverse-surface));
-    color: rgb(var(--mdui-color-inverse-on-surface));
-    padding: 0.6rem 1rem;
-    border-radius: var(--mdui-shape-corner-medium);
-    box-shadow: var(--mdui-elevation-level2);
-    font-size: 0.9rem;
-    max-width: 320px;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    pointer-events: auto;
-    animation: toast-in 0.2s ease-out;
-}
-.toast.warning { background: rgb(var(--mdui-color-error)); color: rgb(var(--mdui-color-on-error)); }
-.toast.error   { background: rgb(var(--mdui-color-error)); color: rgb(var(--mdui-color-on-error)); }
-@keyframes toast-in {
-    from { opacity: 0; transform: translateX(20px); }
-    to   { opacity: 1; transform: translateX(0); }
-}
+#prompt-buttons mdui-button.cancel { font-size: 0.85rem; }
 `
 
 export function mduiHtml(wsUrl: string): string {
@@ -788,7 +568,7 @@ export function mduiHtml(wsUrl: string): string {
             display: 'standalone',
             background_color: '#fef7ff',
             theme_color: '#6750a4',
-            icons: [{src: iconUrl, sizes: 'any', type: 'image/svg+xml'}],
+            icons: [{src: iconUrl, sizes: 'any', type: 'image/svg+xml'}]
         })
     )
 
@@ -813,9 +593,8 @@ export function mduiHtml(wsUrl: string): string {
     <header>
       <div id="app-bar">
         <span id="app-bar-title">π-task remote</span>
-        <button id="theme-toggle" type="button" aria-label="切换主题">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 18V6a6 6 0 0 0 0 12zm0-16a1 1 0 0 1 1 1v1a1 1 0 0 1-2 0V3a1 1 0 0 1 1-1zm0 16a1 1 0 0 1 1 1v1a1 1 0 0 1-2 0v-1a1 1 0 0 1 1-1zM4.22 4.22a1 1 0 0 1 1.41 0l.71.71a1 1 0 1 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41zm13.44 13.44a1 1 0 0 1 1.41 0l.71.71a1 1 0 1 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41zM2 12a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1zm17 0a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2h-1a1 1 0 0 1-1-1zM4.22 19.78a1 1 0 0 1 0-1.41l.71-.71a1 1 0 1 1 1.41 1.41l-.71.71a1 1 0 0 1-1.41 0zm13.44-13.44a1 1 0 0 1 0-1.41l.71-.71a1 1 0 1 1 1.41 1.41l-.71.71a1 1 0 0 1-1.41 0z"/></svg>
-        </button>
+        <span class="grow"></span>
+        <mdui-button-icon id="theme-toggle" aria-label="切换主题"></mdui-button-icon>
       </div>
       <div id="status-bar">
         <span id="status-dot"></span>
@@ -828,17 +607,14 @@ export function mduiHtml(wsUrl: string): string {
     </header>
 
     <main id="chat-wrap">
-      <button id="scroll-bottom" type="button" aria-label="跳到底部" title="跳到底部">
-        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7 14l5 5 5-5z"/></svg>
-      </button>
+      <mdui-fab id="scroll-bottom" icon="arrow_downward" size="small" aria-label="跳到底部" title="跳到底部"></mdui-fab>
     </main>
 
     <footer id="input-bar" style="position:relative;">
       <div id="cmd-suggestions"></div>
-      <textarea id="input" rows="1" placeholder="输入消息（/ 查看命令）…" disabled></textarea>
-      <button id="send-btn" disabled aria-label="发送">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
-      </button>
+      <mdui-text-field id="input" variant="outlined" autosize min-rows="1" max-rows="6"
+        placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
+      <mdui-button-icon id="send-btn" icon="send" disabled aria-label="发送"></mdui-button-icon>
     </footer>
   </div>
 
@@ -847,45 +623,36 @@ export function mduiHtml(wsUrl: string): string {
     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 20a8 8 0 1 0-8-8 8 8 0 0 0 8 8zm0-18a10 10 0 1 1-10 10A10 10 0 0 1 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
     <span id="held-label">waiting:</span>
     <span id="held-text"></span>
-    <button id="held-clear" type="button" title="清除">
-      <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-    </button>
+    <mdui-button-icon id="held-clear" icon="close" title="清除"></mdui-button-icon>
   </div>
 
   <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
-  <div id="status-panel"></div>
+  <mdui-card id="status-panel" variant="filled" style="display:none"></mdui-card>
 
   <!-- Bell + notifications dropdown -->
-  <button id="bell" type="button" aria-label="通知">
-    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11a6 6 0 0 0-5-5.91V4a1 1 0 0 0-2 0v1.09A6 6 0 0 0 6 11v5l-2 2v1h16v-1z"/></svg>
-  </button>
+  <mdui-button-icon id="bell" icon="notifications" aria-label="通知"></mdui-button-icon>
   <div id="notif-panel" aria-hidden="true">
     <div id="notif-toggle-row">
       <span id="notif-title">通知</span>
-      <button id="notif-toggle" type="button">启用</button>
+      <mdui-switch id="notif-toggle"></mdui-switch>
     </div>
-    <div id="notif-list"></div>
+    <mdui-list id="notif-list"></mdui-list>
   </div>
 
-  <!-- Prompt card: shown when pi asks for user input -->
-  <div id="prompt-card">
-    <div class="card">
-      <div class="q-label">π 需要你的输入</div>
-      <div class="q" id="prompt-q"></div>
-      <div class="rec-panel" id="prompt-rec">
-        <div class="rec-label">推荐答案</div>
-        <div class="rec-text" id="prompt-rec-text"></div>
-      </div>
-      <textarea id="prompt-input" rows="3" placeholder="输入你的回答…"></textarea>
-      <div class="row" id="prompt-buttons"></div>
+  <!-- Prompt dialog: shown when pi asks for user input -->
+  <mdui-dialog id="prompt-card" close-on-esc headline="π 需要你的输入">
+    <div slot="description" class="q" id="prompt-q"></div>
+    <div class="rec-panel" id="prompt-rec">
+      <div class="rec-label">推荐答案</div>
+      <div class="rec-text" id="prompt-rec-text"></div>
     </div>
-  </div>
+    <mdui-text-field id="prompt-input" variant="outlined" autosize min-rows="3" max-rows="8"
+      placeholder="输入你的回答…" style="display:none"></mdui-text-field>
+    <div slot="action" class="row" id="prompt-buttons"></div>
+  </mdui-dialog>
 
   <!-- Reconnect overlay with live countdown -->
   <div id="reconnect-overlay"><span id="reconnect-msg">重新连接中…</span></div>
-
-  <!-- Toast stack -->
-  <div id="toast-stack"></div>
 
   <script type="module">
     ${BUNDLE_IMPORTS}
@@ -937,7 +704,6 @@ function stage0Logic(wsUrl: string): string {
     const notifList    = document.getElementById('notif-list');
     const notifToggle  = document.getElementById('notif-toggle');
     const notifTitle   = document.getElementById('notif-title');
-    const toastStack   = document.getElementById('toast-stack');
 
     // ───────────── State ─────────────
     let connected = false, agentRunning = false, modelName = '';
@@ -1033,11 +799,7 @@ function stage0Logic(wsUrl: string): string {
     }
     function setSendBtn() {
       sendBtn.classList.toggle('running', agentRunning);
-      const path = agentRunning
-        ? '<rect x="6" y="6" width="12" height="12" rx="1"/>'
-        : '<path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>';
-      sendBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">'
-        + path + '</svg>';
+      sendBtn.icon = agentRunning ? 'stop' : 'send';
     }
 
     // ───────────── Scroll tracking ─────────────
@@ -1110,10 +872,10 @@ function stage0Logic(wsUrl: string): string {
     }
     function attachBubbleCopy(el, rawText) {
       el.__copyText = rawText;
-      const b = document.createElement('button');
+      const b = document.createElement('mdui-button-icon');
       b.type = 'button';
       b.className = 'copy-btn bubble-copy';
-      b.textContent = 'Copy';
+      b.icon = 'content_copy';
       el.appendChild(b);
     }
     chatLog.addEventListener('click', (e) => {
@@ -1125,10 +887,9 @@ function stage0Logic(wsUrl: string): string {
     });
     function flashCopied(btn) {
       if (!btn) return;
-      const prev = btn.textContent;
-      btn.textContent = 'Copied';
+      btn.icon = 'check';
       btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = prev; btn.classList.remove('copied'); }, 1200);
+      setTimeout(() => { btn.icon = 'content_copy'; btn.classList.remove('copied'); }, 1200);
     }
     function fallbackCopy(text, btn) {
       try {
@@ -1180,22 +941,27 @@ function stage0Logic(wsUrl: string): string {
       return text ? text.split('\\n').length : 0;
     }
     function makeThinkingEl(text, live) {
-      const d = document.createElement('details');
-      d.className = 'thinking';
-      const s = document.createElement('summary');
+      const wrap = document.createElement('mdui-collapse');
+      wrap.className = 'thinking';
+      const item = document.createElement('mdui-collapse-item');
+      item.value = 'thinking';
+      const header = document.createElement('div');
+      header.setAttribute('slot', 'header');
+      header.className = 'thinking-header';
       const lbl = document.createElement('span');
       lbl.className = 'thinking-label';
       lbl.textContent = thinkingSummary(thinkingLineCount(text));
-      s.appendChild(lbl);
-      d.appendChild(s);
+      header.appendChild(lbl);
+      item.appendChild(header);
       const body = document.createElement('pre');
       body.className = 'thinking-body';
       body.textContent = text || '';
-      d.appendChild(body);
-      d.open = live || !text;
-      chatLog.appendChild(d);
+      item.appendChild(body);
+      wrap.appendChild(item);
+      if (live || !text) wrap.setAttribute('value', 'thinking');
+      chatLog.appendChild(wrap);
       scrollBottom();
-      return d;
+      return wrap;
     }
     function appendThinkingDelta(delta) {
       if (!currentThinking) {
@@ -1219,36 +985,46 @@ function stage0Logic(wsUrl: string): string {
     }
 
     // ───────────── Stage 2: Tool call cards ─────────────
+    // Returns a small facade {root, header, body} over the mdui-collapse
+    // structure so call sites can append results/elapsed without knowing it.
     function addToolCall(toolName, args, toolCallId, isError) {
-      const d = document.createElement('details');
-      d.className = 'tool-call' + (isError ? ' error' : '');
-      d.id = 'tool-' + toolCallId;
-      const s = document.createElement('summary');
+      const wrap = document.createElement('mdui-collapse');
+      wrap.className = 'tool-call' + (isError ? ' error' : '');
+      wrap.id = 'tool-' + toolCallId;
+      const item = document.createElement('mdui-collapse-item');
+      item.value = 'tool';
+      const header = document.createElement('div');
+      header.setAttribute('slot', 'header');
+      header.className = 'tool-header';
       const lbl = document.createElement('span');
       lbl.className = 'tool-label';
       lbl.textContent = toolSummary(toolName, args);
-      s.appendChild(lbl);
+      header.appendChild(lbl);
       const badge = toolBadge(toolName, args);
       if (badge && (badge.added || badge.removed)) {
         const b = document.createElement('span');
         b.className = 'tool-badge';
         b.textContent = '+' + badge.added + ' −' + badge.removed;
-        s.appendChild(b);
+        header.appendChild(b);
       }
-      d.appendChild(s);
+      item.appendChild(header);
+      const body = document.createElement('div');
+      body.className = 'tool-body';
       const diffHtml = toolDiffHtml(toolName, args);
       if (diffHtml) {
         const dv = document.createElement('div');
         dv.className = 'tool-diff';
         dv.innerHTML = diffHtml;
-        d.appendChild(dv);
+        body.appendChild(dv);
       }
-      chatLog.appendChild(d);
+      item.appendChild(body);
+      wrap.appendChild(item);
+      chatLog.appendChild(wrap);
       scrollBottom();
-      return d;
+      return { root: wrap, header: header, body: body };
     }
     function appendElapsed(d, elapsedMs) {
-      const s = d && d.querySelector('summary');
+      const s = d && d.header;
       if (!s || s.querySelector('.tool-elapsed')) return;
       const txt = fmtElapsed(elapsedMs);
       if (!txt) return;
@@ -1299,14 +1075,13 @@ function stage0Logic(wsUrl: string): string {
         const d = taskWidgetData;
         const title = '<div class="widget-title">' + escHtml(d.title || '') + '</div>';
         const meta = '<div class="widget-meta">'
-          + (d.phase ? '<span class="widget-phase">' + escHtml(d.phase) + '</span>' : '')
+          + (d.phase ? '<mdui-chip class="widget-phase">' + escHtml(d.phase) + '</mdui-chip>' : '')
           + (d.total > 0 && d.done != null ? '<span class="widget-step">' + d.done + '/' + d.total + '</span>' : '')
           + (d.elapsed ? '<span class="widget-elapsed">' + escHtml(d.elapsed) + '</span>' : '')
           + '</div>';
         let bar = '';
         if (d.total > 0 && d.done != null) {
-          const pct = Math.max(0, Math.min(100, Math.round((d.done / d.total) * 100)));
-          bar = '<div class="widget-bar"><div class="widget-bar-fill" style="width:' + pct + '%"></div></div>';
+          bar = '<mdui-linear-progress class="widget-bar" max="' + d.total + '" value="' + d.done + '"></mdui-linear-progress>';
         }
         const action = d.action ? '<div class="widget-action">↳ ' + escHtml(d.action) + '</div>' : '';
         statusPanel.innerHTML = title + meta + bar + action;
@@ -1323,11 +1098,13 @@ function stage0Logic(wsUrl: string): string {
 
     // ───────────── Stage 3: Toast + notif history ─────────────
     function showToast(message, level) {
-      const t = document.createElement('div');
-      t.className = 'toast ' + (level || 'info');
-      t.textContent = message;
-      toastStack.appendChild(t);
-      setTimeout(() => { t.remove(); }, 4000);
+      const prefix = level === 'error' ? '✕ ' : level === 'warning' ? '⚠ ' : '';
+      snackbar({
+        message: prefix + message,
+        placement: 'top',
+        closeable: true,
+        autoCloseDelay: 4000,
+      });
       recordNotif(message, level);
     }
     function recordNotif(message, level) {
@@ -1340,13 +1117,14 @@ function stage0Logic(wsUrl: string): string {
         notifList.innerHTML = '<div id="notif-empty">还没有通知</div>';
         return;
       }
+      const LEVEL_ICON = { error: 'error', warning: 'warning_amber', info: 'info' };
       let html = '';
       for (let i = 0; i < notifHistory.length; i++) {
         const n = notifHistory[i];
-        html += '<div class="notif-item ' + escHtml(n.level) + '">'
-          + '<span class="notif-dot"></span>'
-          + '<span class="notif-msg">' + escHtml(n.message) + '</span>'
-          + '<span class="notif-time">' + escHtml(fmtClock(n.ts)) + '</span></div>';
+        html += '<mdui-list-item class="notif-item ' + escHtml(n.level) + '"'
+          + ' icon="' + (LEVEL_ICON[n.level] || 'info') + '"'
+          + ' headline="' + escHtml(n.message) + '"'
+          + ' description="' + escHtml(fmtClock(n.ts)) + '" nonclickable></mdui-list-item>';
       }
       notifList.innerHTML = html;
     }
@@ -1370,8 +1148,7 @@ function stage0Logic(wsUrl: string): string {
     function updateBell() {
       const on = notifyEnabled();
       bell.classList.toggle('on', on);
-      notifToggle.textContent = on ? '已启用' : '启用';
-      notifToggle.classList.toggle('on', on);
+      notifToggle.checked = on;
     }
     function setNotifOpen(open) {
       notifOpen = open;
@@ -1445,7 +1222,7 @@ function stage0Logic(wsUrl: string): string {
         setNotifOpen(false);
       }
     });
-    notifToggle.addEventListener('click', togglePush);
+    notifToggle.addEventListener('change', togglePush);
     updateBell();
 
     // ───────────── Stage 3: Command autocomplete ─────────────
@@ -1474,14 +1251,16 @@ function stage0Logic(wsUrl: string): string {
       cmdSuggestions.innerHTML = '';
       if (!cmdActive.length) { cmdSuggestions.style.display = 'none'; return; }
       cmdSuggestions.style.display = 'block';
+      const list = document.createElement('mdui-list');
       cmdActive.forEach((cmd, i) => {
-        const el = document.createElement('div');
-        el.className = 'cmd-item' + (i === cmdIndex ? ' active' : '');
-        el.innerHTML = '<span class="name">' + escHtml(cmd.name) + '</span>'
-                     + '<span class="desc">' + escHtml(cmd.desc) + '</span>';
+        const el = document.createElement('mdui-list-item');
+        if (i === cmdIndex) el.setAttribute('active', '');
+        el.setAttribute('headline', cmd.name);
+        el.setAttribute('description', cmd.desc);
         el.addEventListener('mousedown', (e) => { e.preventDefault(); pickCmd(i); });
-        cmdSuggestions.appendChild(el);
+        list.appendChild(el);
       });
+      cmdSuggestions.appendChild(list);
     }
     function pickCmd(i) {
       const cmd = cmdActive[i];
@@ -1557,7 +1336,7 @@ function stage0Logic(wsUrl: string): string {
     });
     inputEl.addEventListener('input', () => { updateSuggestions(); });
 
-    // ───────────── Stage 3: Prompt card ─────────────
+    // ───────────── Stage 3: Prompt dialog ─────────────
     function answer(value) {
       if (activePromptId === null) return;
       ws.send(JSON.stringify({ type: 'prompt_answer', id: activePromptId, value }));
@@ -1565,7 +1344,7 @@ function stage0Logic(wsUrl: string): string {
     }
     function closePrompt() {
       activePromptId = null;
-      promptCard.classList.remove('show');
+      if (promptCard.open) promptCard.open = false;
       promptInput.value = '';
       promptInput.style.display = 'none';
       promptRec.style.display = 'none';
@@ -1575,10 +1354,14 @@ function stage0Logic(wsUrl: string): string {
       refreshComposer();
     }
     function makeBtn(label, cls, onClick) {
-      const btn = document.createElement('button');
+      const btn = document.createElement('mdui-button');
       btn.type = 'button';
       btn.textContent = label;
-      if (cls) btn.className = cls;
+      btn.setAttribute('variant', cls === 'primary' ? 'filled' : cls === 'cancel' ? 'text' : 'tonal');
+      if (cls === 'cancel') {
+        btn.classList.add('cancel');
+        btn.style.setProperty('--mdui-color-primary', 'var(--mdui-color-error)');
+      }
       btn.addEventListener('click', onClick);
       return btn;
     }
@@ -1609,12 +1392,12 @@ function stage0Logic(wsUrl: string): string {
       return out;
     }
     function renderButtons(buttons, stacked, omitCancel) {
-      promptButtons.className = 'row' + (stacked ? ' stacked' : '');
       promptButtons.innerHTML = '';
       for (let i = 0; i < buttons.length; i++) promptButtons.appendChild(buttons[i]);
       const acts = makeActionBtns();
       for (let i = 0; i < acts.length; i++) promptButtons.appendChild(acts[i]);
       if (!omitCancel) promptButtons.appendChild(makeCancelBtn());
+      promptCard.stackedActions = !!stacked;
     }
     function showManualEntry() {
       promptRec.style.display = 'none';
@@ -1665,11 +1448,13 @@ function stage0Logic(wsUrl: string): string {
         renderButtons(buttons);
         promptInput.focus();
       }
-      promptCard.classList.add('show');
+      promptCard.open = true;
       refreshComposer();
     }
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && promptCard.classList.contains('show')) closePrompt();
+    // Esc / programmatic close both land here — the prompt stays pending
+    // server-side and is restored from the next snapshot.
+    promptCard.addEventListener('close', () => {
+      if (activePromptId !== null) closePrompt();
     });
 
     // ───────────── WS ─────────────
@@ -1815,12 +1600,12 @@ function stage0Logic(wsUrl: string): string {
         case 'tool_end': {
           const d = toolCallMap[m.toolCallId];
           if (d) {
-            if (m.isError) d.classList.add('error');
+            if (m.isError) d.root.classList.add('error');
             appendElapsed(d, m.elapsedMs);
             const pre = document.createElement('pre');
             pre.className = 'tool-result';
             pre.textContent = toolResultText(m.result);
-            d.appendChild(pre);
+            d.body.appendChild(pre);
             delete toolCallMap[m.toolCallId];
           }
           currentBubble = null; streamText = '';
@@ -1914,7 +1699,7 @@ function stage0Logic(wsUrl: string): string {
         const pre = document.createElement('pre');
         pre.className = 'tool-result';
         pre.textContent = toolResultText(p.result);
-        d.appendChild(pre);
+        d.body.appendChild(pre);
       } else {
         toolCallMap[p.toolCallId] = d;
       }
@@ -1949,6 +1734,15 @@ function stage0Logic(wsUrl: string): string {
         }
       }
     }
+
+    // ───────────── Mobile keyboard: track visual viewport ─────────────
+    function setAppHeight() {
+      const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', h + 'px');
+    }
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
 
     setSendBtn();
     refreshComposer();
