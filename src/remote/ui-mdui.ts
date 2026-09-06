@@ -737,9 +737,11 @@ mdui-card#status-panel {
     overflow: hidden;
 }
 #notif-panel.open { display: flex; }
-#notif-toggle-row {
+#notif-toggle-row,
+#thinking-collapse-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
 }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
 
@@ -973,6 +975,10 @@ export function mduiHtml(wsUrl: string): string {
       <span id="notif-title">通知</span>
       <mdui-switch id="notif-toggle"></mdui-switch>
     </div>
+    <div id="thinking-collapse-row">
+      <span>Thinking 自动收起</span>
+      <mdui-switch id="thinking-collapse"></mdui-switch>
+    </div>
     <mdui-list id="notif-list"></mdui-list>
   </div>
 
@@ -1042,6 +1048,7 @@ function stage0Logic(wsUrl: string): string {
     const notifPanel   = document.getElementById('notif-panel');
     const notifList    = document.getElementById('notif-list');
     const notifToggle  = document.getElementById('notif-toggle');
+    const thinkingCollapse = document.getElementById('thinking-collapse');
     const notifTitle   = document.getElementById('notif-title');
 
     // ───────────── State ─────────────
@@ -1494,6 +1501,9 @@ function stage0Logic(wsUrl: string): string {
     }
     function finalizeThinking() {
       if (currentThinking) {
+        /* Streaming stays expanded so you can watch it think; on completion
+           the block folds back up unless the user turned that off. */
+        if (thinkingAutoCollapse()) currentThinking.value = '';
         currentThinking = null; thinkingText = '';
         stopSpinIfIdle();
       } else {
@@ -1652,6 +1662,13 @@ function stage0Logic(wsUrl: string): string {
 
     // ───────────── Stage 3: Bell + push ─────────────
     const NOTIFY_KEY = 'piRemoteNotify';
+    const THINKING_COLLAPSE_KEY = 'piRemoteThinkingCollapse';
+    function thinkingAutoCollapse() {
+      return localStorage.getItem(THINKING_COLLAPSE_KEY) !== '0';
+    }
+    function updateThinkingCollapseSwitch() {
+      thinkingCollapse.checked = thinkingAutoCollapse();
+    }
     function notifyEnabled() {
       return localStorage.getItem(NOTIFY_KEY) === '1'
         && typeof Notification !== 'undefined'
@@ -1670,6 +1687,7 @@ function stage0Logic(wsUrl: string): string {
       const on = notifyEnabled();
       bell.classList.toggle('on', on);
       notifToggle.checked = on;
+      updateThinkingCollapseSwitch();
     }
     function setNotifOpen(open) {
       notifOpen = open;
@@ -1677,6 +1695,14 @@ function stage0Logic(wsUrl: string): string {
       notifPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
       if (open) { renderNotifList(); updateBell(); }
     }
+    thinkingCollapse.addEventListener('change', () => {
+      localStorage.setItem(THINKING_COLLAPSE_KEY, thinkingCollapse.checked ? '1' : '0');
+      if (thinkingCollapse.checked) {
+        // Fold the blocks that are already sitting expanded on the page.
+        document.querySelectorAll('mdui-collapse.thinking.open').forEach((c) => { c.value = ''; });
+      }
+      showToast(thinkingCollapse.checked ? 'Thinking 将在结束时收起' : 'Thinking 保持展开', 'info');
+    });
     function togglePush() {
       if (localStorage.getItem(NOTIFY_KEY) === '1') {
         localStorage.setItem(NOTIFY_KEY, '0');
