@@ -61,12 +61,16 @@ const CSS = `
     --m3e-spring-fast: linear(0, 0.0134 1.85%, 0.0487 3.7%, 0.1664 7.4%, 0.5724 12.4%, 0.8029 15.9%, 0.9432 19.7%, 1.0292 23.8%, 1.0834 28.4%, 1.1068 32.8%, 1.1121 37.2%, 1.101 41.6%, 1.083 46%, 1.0605 50.9%, 1.0229 58.5%, 1.0039 66.2%, 0.9985 74%, 1.0011 84.6%, 1);
     --m3e-spring-spatial: linear(0, 0.0062 0.9%, 0.025 1.9%, 0.1 4.1%, 0.4174 8.7%, 0.6829 12.5%, 0.8764 16.4%, 0.9841 20.4%, 1.0665 24.6%, 1.1161 29.1%, 1.1349 33.9%, 1.1353 38.4%, 1.1266 42.9%, 1.1049 48%, 1.0581 55.5%, 1.0254 62.4%, 1.0072 70.1%, 0.9997 79.5%, 1 100%);
 }
-mdui-button, mdui-button-icon, mdui-fab, mdui-chip {
+/* M3 Expressive press (shape morph) is native to the m3e buttons.
+   Only the send button needs our own transform spring for the
+   send<->stop 90deg swing. */
+m3e-icon-button#send-btn {
+    transform: rotate(var(--send-rot, 0deg));
     transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: transform 350ms var(--m3e-spring-fast);
 }
-mdui-button:active, mdui-button-icon:active, mdui-fab:active {
-    transform: scale(0.93);
+m3e-icon-button#send-btn:active {
+    transform: rotate(var(--send-rot, 0deg)) scale(0.94);
 }
 
 /* mdui 2.x does not load the Material Icons font itself — without this,
@@ -82,6 +86,23 @@ mdui-button:active, mdui-button-icon:active, mdui-fab:active {
 :root {
     color-scheme: light dark;
     --chat-max-width: 920px;
+    /* Bridge the MD tokens the m3e buttons consume onto the mdui palette,
+       so both libraries follow one theme (light/dark included). */
+    --md-sys-color-primary: rgb(var(--mdui-color-primary));
+    --md-sys-color-on-primary: rgb(var(--mdui-color-on-primary));
+    --md-sys-color-primary-container: rgb(var(--mdui-color-primary-container));
+    --md-sys-color-on-primary-container: rgb(var(--mdui-color-on-primary-container));
+    --md-sys-color-secondary-container: rgb(var(--mdui-color-secondary-container));
+    --md-sys-color-on-secondary-container: rgb(var(--mdui-color-on-secondary-container));
+    --md-sys-color-tertiary-container: rgb(var(--mdui-color-tertiary-container));
+    --md-sys-color-on-tertiary-container: rgb(var(--mdui-color-on-tertiary-container));
+    --md-sys-color-error: rgb(var(--mdui-color-error));
+    --md-sys-color-on-error: rgb(var(--mdui-color-on-error));
+    --md-sys-color-error-container: rgb(var(--mdui-color-error-container));
+    --md-sys-color-on-error-container: rgb(var(--mdui-color-on-error-container));
+    --md-sys-color-on-surface: rgb(var(--mdui-color-on-surface));
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
+    --md-sys-color-surface-container-highest: rgb(var(--mdui-color-surface-container-highest));
 }
 html, body {
     height: 100%;
@@ -90,6 +111,23 @@ html, body {
     background: rgb(var(--mdui-color-surface));
     color: rgb(var(--mdui-color-on-surface));
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* MD3 scrollbar adaptation for the app's scroll surfaces (chat log, command
+   suggestions, notifications): a slim rounded thumb in a muted tonal color
+   floating on a transparent track, instead of the browser's chunky default.
+   scrollbar-color covers standard engines; the webkit rules cover the rest. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--mdui-color-on-surface-variant) / 0.4) transparent;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgb(var(--mdui-color-on-surface-variant) / 0.4);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--mdui-color-on-surface-variant) / 0.6);
 }
 #root {
     display: grid;
@@ -105,48 +143,84 @@ html, body {
 #app-bar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: 0.6rem;
+    padding: 0.3rem 0.5rem 0.3rem 1rem;
     background: rgb(var(--mdui-color-surface-container));
-    min-height: 3.5rem;
+    min-height: 3.25rem;
     box-sizing: border-box;
 }
-#app-bar-title {
-    font-size: 1.45rem;
+#app-bar .grow { flex: 1; }
+/* The model name takes the old title slot; falls back to the app name
+   (muted) before the first snapshot reports a model. */
+#status-model {
+    font-size: 1.05rem;
     font-weight: 650;
     font-family: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif;
     letter-spacing: 0.01em;
-    line-height: 1.75rem;
+    line-height: 1.4;
     color: rgb(var(--mdui-color-on-surface));
-    flex: 1;
+    /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
+       names still ellipsize when the row genuinely runs out of room. */
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#status-model.fallback {
+    color: rgb(var(--mdui-color-on-surface-variant));
+    font-weight: 550;
+}
+#status-ctx {
+    font-size: 0.78rem;
+    color: rgb(var(--mdui-color-on-surface-variant));
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+/* Narrow phones: the context figures duplicate the ctx-bar below, so the
+   text yields its space to the model name. */
+@media (max-width: 420px) {
+    #status-ctx { display: none; }
 }
 #theme-toggle {
-    color: rgb(var(--mdui-color-on-surface));
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface));
 }
-#status-bar {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding: 0.5rem 1rem;
-    background: rgb(var(--mdui-color-surface-container-low));
-    font-size: 0.85rem;
+#bell { flex-shrink: 0; }
+#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-primary)); }
+/* Status readout, not an action: a plain pill instead of mdui-chip, whose
+   button internals bring ripple/press affordances a passive indicator
+   must not have. Tonal surface, no hairline stroke. */
+#status-chip {
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    background-color: rgb(var(--mdui-color-surface-container-highest));
     color: rgb(var(--mdui-color-on-surface-variant));
+    font-size: 0.8rem;
+    line-height: 1.2;
+    flex-shrink: 0;
+    user-select: none;
 }
-#status-bar .grow { flex: 1; }
 #status-dot {
     width: 0.5rem; height: 0.5rem; border-radius: 50%;
     background: rgb(var(--mdui-color-outline));
     transition: background 0.2s;
+    flex-shrink: 0;
 }
 #status-dot.connected.idle    { background: rgb(var(--mdui-color-tertiary)); }
 #status-dot.connected.running { background: rgb(var(--mdui-color-primary));
     animation: pulse 1.4s ease-in-out infinite; }
 #status-dot.disconnected      { background: rgb(var(--mdui-color-error)); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
-#ctx-bar { height: 4px;
-    background: rgb(var(--mdui-color-surface-container-high)); overflow: hidden; }
-#ctx-fill { height: 100%; width: 0%; border-radius: 0 999px 999px 0;
-    background: linear-gradient(90deg,
-        rgb(var(--mdui-color-tertiary)), rgb(var(--mdui-color-primary)), rgb(var(--mdui-color-error)));
-    transition: width 0.3s; }
+/* Context-window usage as the same M3 Expressive wavy indicator the task
+   widget uses. Track sits one tonal step above the bar; the wave turns
+   error-red once usage runs hot (the old gradient's danger signal). */
+#ctx-bar {
+    display: block;
+    width: 100%;
+    --md-sys-color-primary: rgb(var(--mdui-color-primary));
+    --md-sys-color-secondary-container: rgb(var(--mdui-color-surface-container-highest));
+}
+#ctx-bar.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
 #chat-wrap { position: relative; min-height: 0; display: flex; }
 #chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
     padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
@@ -180,7 +254,10 @@ html, body {
     line-height: 1.55;
 }
 .bubble.md > :first-child { margin-top: 0; }
-.bubble.md > :last-child  { margin-bottom: 0; }
+/* :last-of-type, not :last-child — the floating copy button is appended
+   inside the bubble and would otherwise count as the last block, keeping
+   the real final block's bottom margin (unequal bubble heights). */
+.bubble.md > :last-of-type { margin-bottom: 0; }
 .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4, .bubble.md h5, .bubble.md h6 {
     margin: 0.8em 0 0.4em;
     font-weight: 600;
@@ -446,18 +523,19 @@ mdui-collapse.tool-call.open .tool-header::before { transform: rotate(45deg) tra
     display: flex; align-items: center; justify-content: center;
     font-size: 1.15rem; flex-shrink: 0;
 }
-.avatar.user      { background: rgb(var(--mdui-color-primary));
-    color: rgb(var(--mdui-color-on-primary));
-    border-radius: 50%; }
-/* pi's avatar: the M3 Expressive flower from @m3e/web's shape library
-   (<m3e-shape name="flower">), no hand-drawn path. m3e-shape clips its
-   children, so the tonal surface lives on an inner fill element. */
+/* Both avatars are library shapes now: the user gets the M3 arch, pi keeps
+   the 4-leaf-clover flower (see makeAvatar). m3e-shape clips its children,
+   so each role's tonal surface lives on the inner fill element. */
 m3e-shape.avatar { font-size: 1.15rem; }
 m3e-shape.avatar .avatar-fill {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
     background: rgb(var(--mdui-color-secondary-container));
     color: rgb(var(--mdui-color-on-secondary-container));
+}
+m3e-shape.avatar .avatar-fill.user {
+    background: rgb(var(--mdui-color-primary));
+    color: rgb(var(--mdui-color-on-primary));
 }
 m3e-shape.avatar .avatar-fill.error {
     background: rgb(var(--mdui-color-error-container));
@@ -476,20 +554,15 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
 /* Expressive send button: tonal circle; send<->stop swings 90deg on the
    spring token, and the running/armed states bridge the tonal color tokens
    to the error palette. */
-mdui-button-icon#send-btn {
-    transform: rotate(var(--send-rot, 0deg));
-}
-mdui-button-icon#send-btn:active {
-    transform: rotate(var(--send-rot, 0deg)) scale(0.93);
-}
-mdui-button-icon#send-btn.running {
+m3e-icon-button#send-btn.running {
     --send-rot: 90deg;
-    --mdui-color-secondary-container: var(--mdui-color-error-container);
-    --mdui-color-on-secondary-container: var(--mdui-color-on-error-container);
+    --md-sys-color-secondary-container: var(--mdui-color-error-container);
+    --md-sys-color-on-secondary-container: var(--mdui-color-on-error-container);
 }
-mdui-button-icon#send-btn.armed {
-    --mdui-color-secondary-container: var(--mdui-color-error);
-    --mdui-color-on-secondary-container: var(--mdui-color-on-error);
+m3e-icon-button#send-btn.armed {
+    --send-rot: 90deg;
+    --md-sys-color-secondary-container: var(--mdui-color-error);
+    --md-sys-color-on-secondary-container: var(--mdui-color-on-error);
 }
 #reconnect-overlay {
     position: fixed; inset: 0;
@@ -517,7 +590,7 @@ mdui-button-icon#send-btn.armed {
     flex: 1; font-style: italic;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#held-clear {
+m3e-icon-button#held-clear {
     color: rgb(var(--mdui-color-on-tertiary-container));
 }
 
@@ -550,8 +623,7 @@ mdui-card#status-panel {
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
 }
 @media (prefers-reduced-motion: reduce) {
-    mdui-button, mdui-button-icon, mdui-fab, mdui-chip { transition: none; }
-    mdui-button:active, mdui-button-icon:active, mdui-fab:active { transform: none; }
+    mdui-button, mdui-button-icon { transition: none; }
 }
 #status-panel.structured .widget-action {
     font-family: Consolas, Menlo, monospace; font-size: 0.78rem;
@@ -560,15 +632,10 @@ mdui-card#status-panel {
 }
 
 /* Bell + notif dropdown */
-mdui-button-icon#bell {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
-    right: 4.5rem; z-index: 50;
-    color: rgb(var(--mdui-color-on-surface));
-}
-mdui-button-icon#bell.on { color: rgb(var(--mdui-color-primary)); }
 #notif-panel {
-    position: fixed; top: 3.5rem; right: 1rem;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 3.7rem);
+    right: 1rem;
     width: 320px; max-height: 60vh;
     background: rgb(var(--mdui-color-surface-container-high));
     border-radius: var(--mdui-shape-corner-medium);
@@ -622,7 +689,7 @@ mdui-list#notif-list {
 }
 
 /* Scroll-to-bottom (mdui-fab) */
-mdui-fab#scroll-bottom {
+m3e-fab#scroll-bottom {
     position: absolute;
     bottom: 1rem; right: var(--col-pad);
     transform: scale(0) rotate(-90deg);
@@ -631,12 +698,12 @@ mdui-fab#scroll-bottom {
     transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease;
     transition: transform 400ms var(--m3e-spring-spatial), opacity 200ms ease;
 }
-mdui-fab#scroll-bottom.show {
+m3e-fab#scroll-bottom.show {
     transform: scale(1) rotate(0deg);
     opacity: 1;
     pointer-events: auto;
 }
-mdui-fab#scroll-bottom.show:active { transform: scale(0.9) rotate(0deg); }
+m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
 
 /* Turn-time divider */
 .turn-time {
@@ -755,24 +822,25 @@ export function mduiHtml(wsUrl: string): string {
 <body>
   <div id="root">
     <header>
+      <!-- Single compact bar: identity/model + status + actions. The old
+           two-row layout (big title above a model row) wasted vertical space
+           on mobile, so the model name now takes the title slot. -->
       <div id="app-bar">
-        <span id="app-bar-title">π-task remote</span>
-        <span class="grow"></span>
-        <mdui-button-icon id="theme-toggle" aria-label="切换主题"></mdui-button-icon>
-      </div>
-      <div id="status-bar">
         <span id="status-dot"></span>
-        <span id="status-model" style="display:none"></span>
+        <span id="status-model">π-task remote</span>
         <span id="status-ctx"></span>
         <span class="grow"></span>
-        <mdui-chip id="status-chip" variant="filled">disconnected</mdui-chip>
+        <span id="status-chip">disconnected</span>
+        <m3e-icon-button id="bell" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
+        <m3e-icon-button id="theme-toggle" aria-label="切换主题"></m3e-icon-button>
       </div>
-      <div id="ctx-bar"><div id="ctx-fill"></div></div>
+      <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
+        aria-label="上下文用量"></m3e-linear-progress-indicator>
     </header>
 
     <main id="chat-wrap">
       <div id="chat-log"></div>
-      <mdui-fab id="scroll-bottom" icon="arrow_downward" size="small" aria-label="跳到底部" title="跳到底部"></mdui-fab>
+      <m3e-fab id="scroll-bottom" variant="primary-container" size="small" aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
     </main>
 
     <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
@@ -783,19 +851,18 @@ export function mduiHtml(wsUrl: string): string {
       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 20a8 8 0 1 0-8-8 8 8 0 0 0 8 8zm0-18a10 10 0 1 1-10 10A10 10 0 0 1 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
       <span id="held-label">waiting:</span>
       <span id="held-text"></span>
-      <mdui-button-icon id="held-clear" icon="close" title="清除"></mdui-button-icon>
+      <m3e-icon-button id="held-clear" title="清除"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
     </div>
 
     <footer id="input-bar" style="position:relative;">
       <div id="cmd-suggestions"></div>
       <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
-      <mdui-button-icon id="send-btn" variant="tonal" icon="send" disabled aria-label="发送"></mdui-button-icon>
+      <m3e-icon-button id="send-btn" variant="tonal" disabled aria-label="发送"><m3e-icon name="send"></m3e-icon></m3e-icon-button>
     </footer>
   </div>
 
-  <!-- Bell + notifications dropdown -->
-  <mdui-button-icon id="bell" icon="notifications" aria-label="通知"></mdui-button-icon>
+  <!-- Notifications dropdown (bell lives in the app bar) -->
   <div id="notif-panel" aria-hidden="true">
     <div id="notif-toggle-row">
       <span id="notif-title">通知</span>
@@ -843,7 +910,7 @@ function stage0Logic(wsUrl: string): string {
     const chatLog      = document.getElementById('chat-log');
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
-    const ctxFill      = document.getElementById('ctx-fill');
+    const ctxBar       = document.getElementById('ctx-bar');
     const statusDot    = document.getElementById('status-dot');
     const statusModel  = document.getElementById('status-model');
     const statusCtx    = document.getElementById('status-ctx');
@@ -889,8 +956,38 @@ function stage0Logic(wsUrl: string): string {
 
     // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
     // Pinned version; loaded async so a slow CDN never blocks the app boot.
-    import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').then(paintCtxWave).catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/shape').catch(() => {});
+    // m3e-icon renders inline SVG for icons registered through the library's
+    // registerIcon API and otherwise falls back to ligature text in the
+    // "Material Symbols Outlined" font (a multi-MB download). Register the
+    // handful of icons this app uses instead; paths are the Material Icons
+    // set (Apache-2.0), viewBox 0 0 24 24.
+    import('https://esm.sh/@m3e/web@2.7.9/icon').then(m => {
+      const VB = '0 0 24 24';
+      // name: [outlined path, filled path]
+      const iconPaths = {
+        send: ['m4.01 6.03 7.51 3.22-7.52-1 .01-2.22m7.5 8.72L4 17.97v-2.22l7.51-1M2.01 3 2 10l15 2-15 2 .01 7L23 12 2.01 3z',
+               'M2.01 21 23 12 2.01 3 2 10l15 2-15 2z'],
+        stop: ['M16 8v8H8V8h8m2-2H6v12h12V6z',
+               'M6 6h12v12H6z'],
+        notifications: ['M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z',
+                        'M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z'],
+        close: ['M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z',
+                'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'],
+        arrow_downward: ['m20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z',
+                         'm20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z']
+      };
+      for (const name in iconPaths) {
+        m.registerIcon(name, 'outlined', {
+          outlined: { viewBox: VB, path: iconPaths[name][0] },
+          filled:  { viewBox: VB, path: iconPaths[name][1] }
+        });
+      }
+    }).catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/icon-button').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/button').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -944,7 +1041,12 @@ function stage0Logic(wsUrl: string): string {
       return (n / 1000000).toFixed(1) + 'M';
     }
     function setContextBar(usage) {
-      if (usage && usage.percent != null) ctxFill.style.width = usage.percent + '%';
+      paintCtxWave();
+      if (usage && usage.percent != null) {
+        const pct = Math.max(0, Math.min(100, usage.percent));
+        ctxBar.value = pct;
+        ctxBar.classList.toggle('hot', pct >= 85);
+      }
       if (!usage) return;
       const parts = [];
       if (usage.percent != null) parts.push(Math.round(usage.percent) + '%');
@@ -956,8 +1058,10 @@ function stage0Logic(wsUrl: string): string {
     function setModelName(name) {
       if (name === undefined || name === modelName) return;
       modelName = name || '';
-      statusModel.textContent = modelName;
-      statusModel.style.display = modelName ? '' : 'none';
+      // The title slot doubles as the model display: before a model is
+      // reported, show the app name muted instead of an empty bar.
+      statusModel.textContent = modelName || 'π-task remote';
+      statusModel.classList.toggle('fallback', !modelName);
     }
     function updateStatusDot() {
       statusDot.className = !connected ? 'disconnected'
@@ -966,10 +1070,30 @@ function stage0Logic(wsUrl: string): string {
       statusChip.textContent = !connected ? 'disconnected'
                              : agentRunning ? 'running'
                              :                 'idle';
+      paintCtxWave();
+    }
+    /* m3e's determinate wavy bar rolls its wave continuously by design and
+       exposes no pause API (the 1.5s wave-slide is hardcoded, no part
+       attribute). Reach into the open shadow root and freeze the wave
+       unless a live turn is streaming, so the bar only "breathes" while
+       the agent is actually working. */
+    function paintCtxWave() {
+      const apply = () => {
+        const p = ctxBar.shadowRoot && ctxBar.shadowRoot.querySelector('.primary path');
+        if (p) p.style.animationPlayState = agentRunning ? 'running' : 'paused';
+      };
+      /* Lit renders asynchronously — a value change in this same task would
+         run after a synchronous apply and wipe the play-state again. */
+      if (ctxBar.updateComplete && ctxBar.updateComplete.then) {
+        ctxBar.updateComplete.then(apply);
+      } else {
+        requestAnimationFrame(apply);
+      }
     }
     function setSendBtn() {
       sendBtn.classList.toggle('running', agentRunning);
-      sendBtn.icon = agentRunning ? 'stop' : 'send';
+      const icon = sendBtn.querySelector('m3e-icon');
+      if (icon) icon.name = agentRunning ? 'stop' : 'send';
     }
 
     // ───────────── Scroll tracking ─────────────
@@ -1016,17 +1140,12 @@ function stage0Logic(wsUrl: string): string {
         : role === 'error'
           ? '<mdui-icon name="error_outline"></mdui-icon>'
           : '<mdui-icon name="auto_awesome"></mdui-icon>';
-      if (role === 'user') {
-        const d = document.createElement('div');
-        d.className = 'avatar ' + role;
-        d.innerHTML = icon;
-        return d;
-      }
       const s = document.createElement('m3e-shape');
-      s.name = '4-leaf-clover';
+      s.name = role === 'user' ? 'arch' : '4-leaf-clover';
       s.className = 'avatar';
       const fill = document.createElement('div');
-      fill.className = 'avatar-fill' + (role === 'error' ? ' error' : '');
+      fill.className = 'avatar-fill'
+        + (role === 'error' ? ' error' : role === 'user' ? ' user' : '');
       fill.innerHTML = icon;
       s.appendChild(fill);
       return s;
@@ -1577,13 +1696,13 @@ function stage0Logic(wsUrl: string): string {
       refreshComposer();
     }
     function makeBtn(label, cls, onClick) {
-      const btn = document.createElement('mdui-button');
+      const btn = document.createElement('m3e-button');
       btn.type = 'button';
       btn.textContent = label;
       btn.setAttribute('variant', cls === 'primary' ? 'filled' : cls === 'cancel' ? 'text' : 'tonal');
       if (cls === 'cancel') {
         btn.classList.add('cancel');
-        btn.style.setProperty('--mdui-color-primary', 'var(--mdui-color-error)');
+        btn.style.setProperty('--md-sys-color-primary', 'var(--mdui-color-error)');
       }
       btn.addEventListener('click', onClick);
       return btn;
@@ -1755,7 +1874,7 @@ function stage0Logic(wsUrl: string): string {
           taskWidgetData = m.taskWidgetData || null;
           renderWidgets();
           setModelName(m.model);
-          if (m.context) setContextBar(m.context); else ctxFill.style.width = '0%';
+          if (m.context) setContextBar(m.context); else { ctxBar.value = 0; ctxBar.classList.remove('hot'); }
           agentRunning = !!m.agentRunning;
           held = m.held || [];
           runHolding = !!m.heldRunActive;
@@ -1894,7 +2013,7 @@ function stage0Logic(wsUrl: string): string {
           refreshComposer(); setSendBtn();
           taskWidgetLines = null; taskWidgetData = null;
           renderWidgets();
-          ctxFill.style.width = '0%';
+          ctxBar.value = 0; ctxBar.classList.remove('hot');
           break;
       }
     }
