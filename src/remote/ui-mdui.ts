@@ -152,18 +152,21 @@ html, body {
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* Expressive color blocking: the app bar is a primary-container color field
+   (token-driven, so light/dark both resolve), not another gray band. */
 #app-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: calc(var(--safe-top) + 0.3rem) 0.5rem 0.3rem 1rem;
-    background: rgb(var(--mdui-color-surface-container));
+    background: rgb(var(--mdui-color-primary-container));
+    color: rgb(var(--mdui-color-on-primary-container));
     min-height: 3.25rem;
     box-sizing: border-box;
 }
 #app-bar .grow { flex: 1; }
 /* The model name takes the old title slot; falls back to the app name
-   (muted) before the first snapshot reports a model. */
+   (softened) before the first snapshot reports a model. */
 #status-model {
     /* Information, not a wordmark: the model name in the platform's UI font
        (the old rounded display face was leftover title styling). */
@@ -171,7 +174,7 @@ html, body {
     font-weight: 650;
     letter-spacing: 0.01em;
     line-height: 1.4;
-    color: rgb(var(--mdui-color-on-surface));
+    color: rgb(var(--mdui-color-on-primary-container));
     /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
        names still ellipsize when the row genuinely runs out of room. */
     flex: 0 1 auto;
@@ -181,12 +184,12 @@ html, body {
     white-space: nowrap;
 }
 #status-model.fallback {
-    color: rgb(var(--mdui-color-on-surface-variant));
+    color: color-mix(in srgb, rgb(var(--mdui-color-on-primary-container)) 72%, transparent);
     font-weight: 550;
 }
 #status-ctx {
     font-size: 0.78rem;
-    color: rgb(var(--mdui-color-on-surface-variant));
+    color: color-mix(in srgb, rgb(var(--mdui-color-on-primary-container)) 80%, transparent);
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -195,18 +198,18 @@ html, body {
 @media (max-width: 420px) {
     #status-ctx { display: none; }
 }
-/* Both app-bar icons read as one control row: the standard icon-button
-   default is on-surface-variant, but the pair matches the model name at
-   on-surface (the theme button's inline SVG already inherits this). */
+/* App-bar icons sit on the primary-container field, so both read at
+   on-primary-container; the bell's subscribed state picks tertiary for a
+   distinct hue that still holds on the color field. */
 #theme-toggle,
 #bell {
-    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface));
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-primary-container));
 }
 #bell { flex-shrink: 0; }
-#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-primary)); }
+#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-tertiary)); }
 /* Status readout, not an action: a plain pill instead of mdui-chip, whose
    button internals bring ripple/press affordances a passive indicator
-   must not have. Tonal surface, no hairline stroke. */
+   must not have. Neutral tonal pill against the color field. */
 #status-chip {
     padding: 0.3rem 0.85rem;
     border-radius: 999px;
@@ -224,7 +227,9 @@ html, body {
     flex-shrink: 0;
 }
 #status-dot.connected.idle    { background: rgb(var(--mdui-color-tertiary)); }
-#status-dot.connected.running { background: rgb(var(--mdui-color-primary));
+/* running reads at on-primary-container — primary would vanish on the
+   primary-container bar. */
+#status-dot.connected.running { background: rgb(var(--mdui-color-on-primary-container));
     animation: pulse 1.4s ease-in-out infinite; }
 #status-dot.disconnected      { background: rgb(var(--mdui-color-error)); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
@@ -399,8 +404,10 @@ mdui-collapse.thinking {
     width: 100%;
     margin: 0.25rem auto;
     border-radius: var(--mdui-shape-corner-medium);
-    /* Sibling of the tool-call card in the same stream — same surface. */
-    background: rgb(var(--mdui-color-surface-container));
+    /* A whisper of secondary tint marks "model reasoning" apart from the
+       neutral tool-call cards it sits between — expressive, but the body
+       text stays on the mixed (mostly neutral) surface. */
+    background: color-mix(in srgb, rgb(var(--mdui-color-secondary-container)) 30%, rgb(var(--mdui-color-surface-container)));
     overflow: hidden;
     transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: border-radius 350ms var(--m3e-spring-fast);
@@ -551,8 +558,10 @@ m3e-shape.avatar { font-size: 1.15rem; }
 m3e-shape.avatar .avatar-fill {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
-    background: rgb(var(--mdui-color-secondary-container));
-    color: rgb(var(--mdui-color-on-secondary-container));
+    /* π's flower in tertiary-container — the third voice of the expressive
+       triad (user = primary arch, composer = filled primary). */
+    background: rgb(var(--mdui-color-tertiary-container));
+    color: rgb(var(--mdui-color-on-tertiary-container));
 }
 m3e-shape.avatar .avatar-fill.user {
     background: rgb(var(--mdui-color-primary));
@@ -572,18 +581,18 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
     box-sizing: border-box;
 }
 #input { flex: 1; min-width: 0; }
-/* Expressive send button: tonal circle; send<->stop swings 90deg on the
-   spring token, and the running/armed states bridge the tonal color tokens
-   to the error palette. */
+/* Expressive send button: a filled primary circle — the composer's one
+   loud accent. send<->stop swings 90deg on the spring token; running/armed
+   retarget the primary tokens to the error palette (armed is full error). */
 m3e-icon-button#send-btn.running {
     --send-rot: 90deg;
-    --md-sys-color-secondary-container: var(--mdui-color-error-container);
-    --md-sys-color-on-secondary-container: var(--mdui-color-on-error-container);
+    --md-sys-color-primary: var(--mdui-color-error-container);
+    --md-sys-color-on-primary: var(--mdui-color-on-error-container);
 }
 m3e-icon-button#send-btn.armed {
     --send-rot: 90deg;
-    --md-sys-color-secondary-container: var(--mdui-color-error);
-    --md-sys-color-on-secondary-container: var(--mdui-color-on-error);
+    --md-sys-color-primary: var(--mdui-color-error);
+    --md-sys-color-on-primary: var(--mdui-color-on-error);
 }
 #reconnect-overlay {
     position: fixed; inset: 0;
@@ -617,6 +626,8 @@ m3e-icon-button#held-clear {
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-tertiary-container));
 }
 
+/* Live-task panel as an expressive color block: secondary-container reads
+   as "the agent is working now" — the held bar (tertiary) stays distinct. */
 mdui-card#status-panel {
     display: none;
     box-sizing: border-box;
@@ -624,41 +635,44 @@ mdui-card#status-panel {
     padding: 0.6rem var(--col-pad);
     border-radius: 0;
     font-size: 0.85rem;
-    color: rgb(var(--mdui-color-on-surface));
+    background: rgb(var(--mdui-color-secondary-container));
+    color: rgb(var(--mdui-color-on-secondary-container));
 }
 #status-panel.structured .widget-title { font-weight: 600; margin-bottom: 0.3rem; }
 #status-panel.structured .widget-meta {
     display: flex; gap: 0.6rem; align-items: center;
-    color: rgb(var(--mdui-color-on-surface-variant));
+    color: color-mix(in srgb, rgb(var(--mdui-color-on-secondary-container)) 82%, transparent);
     font-size: 0.78rem; margin-bottom: 0.4rem;
 }
 /* Phase chip matches the app bar's status pill: a stroke-free tonal pill
-   (mdui-chip's own look is a hairline-outlined assist chip). */
+   (mdui-chip's own look is a hairline-outlined assist chip). On the
+   secondary field it goes translucent so the block reads through. */
 #status-panel .widget-phase {
     font-size: 0.78rem;
     border: none;
     border-radius: 999px;
-    background-color: rgb(var(--mdui-color-surface-container-highest));
-    color: rgb(var(--mdui-color-on-surface-variant));
+    background-color: color-mix(in srgb, rgb(var(--mdui-color-on-secondary-container)) 14%, transparent);
+    color: rgb(var(--mdui-color-on-secondary-container));
 }
 /* Wavy determinate indicator — the M3 Expressive signature — rendered by
    @m3e/web's <m3e-linear-progress-indicator variant="wavy"> (loaded from
    esm.sh; mdui 2.x has no Expressive components). Its color tokens are
-   bridged to the mdui theme so light/dark follow the same palette. */
+   scoped here so light/dark follow the same palette; on the secondary
+   field the track goes translucent rather than one-tonal-up. */
 #status-panel m3e-linear-progress-indicator.widget-bar {
     display: block;
     width: 100%;
     margin: 0.15rem 0 0.3rem;
-    --md-sys-color-primary: rgb(var(--mdui-color-primary));
-    --md-sys-color-secondary-container: rgb(var(--mdui-color-surface-container-highest));
-    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
+    --md-sys-color-primary: rgb(var(--mdui-color-on-secondary-container));
+    --md-sys-color-secondary-container: color-mix(in srgb, rgb(var(--mdui-color-on-secondary-container)) 22%, transparent);
+    --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-secondary-container));
 }
 @media (prefers-reduced-motion: reduce) {
     mdui-button, mdui-button-icon { transition: none; }
 }
 #status-panel.structured .widget-action {
     font-family: var(--font-mono); font-size: 0.78rem;
-    color: rgb(var(--mdui-color-on-surface-variant));
+    color: color-mix(in srgb, rgb(var(--mdui-color-on-secondary-container)) 82%, transparent);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -896,7 +910,7 @@ export function mduiHtml(wsUrl: string): string {
       <div id="cmd-suggestions"></div>
       <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
-      <m3e-icon-button id="send-btn" variant="tonal" disabled aria-label="发送"><m3e-icon name="send"></m3e-icon></m3e-icon-button>
+      <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send"></m3e-icon></m3e-icon-button>
     </footer>
   </div>
 
