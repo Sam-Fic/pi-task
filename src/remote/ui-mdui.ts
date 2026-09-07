@@ -137,7 +137,11 @@ html, body {
 .scroll-thumb {
     position: absolute;
     width: 5px;
-    border-radius: 999px;
+    /* Half the width — the round cap. On the rounded command panel the thumb
+       is TRANSLATED so these caps' centers land exactly on the card corner
+       arcs' centers (see attachScrollbar's rightInset/inset): with a 28px
+       corner, both sit 28 - 2.5 = 25.5px from the edges. */
+    border-radius: 2.5px;
     background: color-mix(in srgb, rgb(var(--mdui-color-on-surface-variant)) 55%, transparent);
     opacity: 0;
     transition: opacity 250ms;
@@ -1390,7 +1394,14 @@ function stage0Logic(wsUrl: string): string {
        them on the main surfaces: fades in while scrolling, idles out after
        700ms, and is draggable (1px of thumb travel = scrollHeight/clientHeight
        px of content). host must be a positioned ancestor of scroller. */
-    function attachScrollbar(scroller, host) {
+    // opts.inset / opts.rightInset: the thumb's end gap and right gap. On the
+    // rounded command panel both are 28 (corner) - 2.5 (cap radius) = 25.5px,
+    // which translates the thumb so its round caps' centers land exactly on
+    // the card corners' arc centers — the parallel-shift concentric design.
+    function attachScrollbar(scroller, host, opts) {
+      opts = opts || {};
+      const inset = opts.inset != null ? opts.inset : 4;
+      const rightInset = opts.rightInset != null ? opts.rightInset : 6;
       const thumb = document.createElement('div');
       thumb.className = 'scroll-thumb';
       host.appendChild(thumb);
@@ -1399,11 +1410,11 @@ function stage0Logic(wsUrl: string): string {
         const max = scroller.scrollHeight - scroller.clientHeight;
         if (max <= 2) { thumb.style.display = 'none'; return; }
         thumb.style.display = 'block';
-        const track = scroller.clientHeight - 8;
+        const track = scroller.clientHeight - inset * 2;
         const h = Math.max(28, Math.round(scroller.clientHeight * scroller.clientHeight / scroller.scrollHeight));
         const top = scroller.getBoundingClientRect().top - host.getBoundingClientRect().top
-          + 4 + (max ? (scroller.scrollTop / max) * (track - h) : 0);
-        const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + 6;
+          + inset + (max ? (scroller.scrollTop / max) * Math.max(0, track - h) : 0);
+        const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + rightInset;
         thumb.style.height = h + 'px';
         thumb.style.top = top + 'px';
         thumb.style.right = right + 'px';
@@ -1425,7 +1436,7 @@ function stage0Logic(wsUrl: string): string {
       thumb.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const max = scroller.scrollHeight - scroller.clientHeight;
-        const track = scroller.clientHeight - 8;
+        const track = scroller.clientHeight - inset * 2;
         const h = parseFloat(thumb.style.height) || 28;
         scroller.scrollTop = startScrollTop + (e.clientY - startPointerY) * (max / Math.max(1, track - h));
       });
@@ -1444,7 +1455,10 @@ function stage0Logic(wsUrl: string): string {
       return { paint };
     }
     attachScrollbar(chatLog, document.getElementById('chat-wrap'));
-    const cmdScrollbar = attachScrollbar(cmdSuggestions, document.getElementById('input-bar'));
+    // The command panel is the rounded card: 28px corner - 2.5px cap = 25.5px
+    // on both axes, so the thumb's end caps sit concentric with its corners.
+    const cmdScrollbar = attachScrollbar(cmdSuggestions, document.getElementById('input-bar'),
+      { inset: 25.5, rightInset: 25.5 });
     attachScrollbar(notifList, notifPanel);
 
     // ───────────── Scroll tracking ─────────────
