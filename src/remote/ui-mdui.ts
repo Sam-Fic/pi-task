@@ -371,6 +371,30 @@ html, body {
 }
 #ctx-stack.hot { --md-sys-color-primary: rgb(var(--mdui-color-error)); }
 #ctx-stack m3e-linear-progress-indicator { display: block; width: 100%; }
+/* The indicator is a custom element from a SECOND CDN (mdui itself comes
+   from jsdelivr). Until it is defined the tag is unknown: zero height, so
+   the bar is simply absent, and every value write lands on a plain
+   HTMLElement as a no-op — a failure that is completely silent. This
+   CSS-only bar is the floor: paintCtx() drives its fill width directly,
+   with no library at all, and it is retired only once the element really
+   upgrades (see customElements.whenDefined below). */
+#ctx-fallback {
+    display: block;
+    height: 4px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgb(var(--mdui-color-surface-container-highest));
+}
+#ctx-fallback > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: rgb(var(--mdui-color-primary));
+    transition: width 300ms;
+}
+#ctx-stack.hot #ctx-fallback > i { background: rgb(var(--mdui-color-error)); }
+#ctx-stack.m3e #ctx-fallback { display: none; }
 /* The wavy layer lives on top; the two layers crossfade exclusively so
    the flat fill never lingers under the rolling wave. */
 #ctx-bar {
@@ -1242,6 +1266,7 @@ export function mduiHtml(wsUrl: string): string {
                above it — a 300ms crossfade reads as the line growing a
                wave. The library has no built-in amplitude morph. -->
           <div id="ctx-stack">
+            <div id="ctx-fallback" aria-hidden="true"><i></i></div>
             <m3e-linear-progress-indicator id="ctx-bar-flat" value="0" max="100"
               aria-hidden="true"></m3e-linear-progress-indicator>
             <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
@@ -1353,6 +1378,7 @@ function stage0Logic(wsUrl: string): string {
     const ctxBar       = document.getElementById('ctx-bar');
     const ctxFlat      = document.getElementById('ctx-bar-flat');
     const ctxStack     = document.getElementById('ctx-stack');
+    const ctxFill      = document.getElementById('ctx-fallback').firstElementChild;
     const statusDot    = document.getElementById('status-dot');
     const statusModel  = document.getElementById('status-model');
     const statusCtx    = document.getElementById('status-ctx');
@@ -1411,7 +1437,16 @@ function stage0Logic(wsUrl: string): string {
 
     // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
     // Pinned version; loaded async so a slow CDN never blocks the app boot.
-    import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').then(paintCtxWave).catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/progress-indicator').catch(() => {});
+    /* The import resolving is not the same as the element being live, and a
+       rejected import (offline, LAN-only, blocked CDN) leaves #ctx-bar an
+       unknown zero-height tag forever. customElements.whenDefined is the one
+       signal that is true exactly when the library is really there: retire
+       the CSS fallback and arm the wave only on it. */
+    customElements.whenDefined('m3e-linear-progress-indicator').then(() => {
+      ctxStack.classList.add('m3e');
+      paintCtxWave();
+    });
     import('https://esm.sh/@m3e/web@2.7.9/shape').catch(() => {});
     // m3e-icon renders inline SVG for icons registered through the library's
     // registerIcon API and otherwise falls back to ligature text in the
@@ -1499,18 +1534,34 @@ function stage0Logic(wsUrl: string): string {
       if (n < 1000000) return Math.round(n / 1000) + 'k';
       return (n / 1000000).toFixed(1) + 'M';
     }
+    /* pi reports a percent only when it knows BOTH the token count and the
+       window: getContextUsage() returns undefined for a model with no
+       contextWindow, and {tokens:null, percent:null} until the first
+       assistant message after a compaction. A missing percent must never
+       mean "keep the old fill" — a frozen bar reads as a working gauge while
+       lying — so derive it when the pieces are there and clear it when they
+       are not. */
+    function ctxPercent(usage) {
+      if (!usage) return null;
+      if (usage.percent != null) return Math.max(0, Math.min(100, usage.percent));
+      if (usage.tokens != null && usage.contextWindow > 0) {
+        return Math.max(0, Math.min(100, (usage.tokens / usage.contextWindow) * 100));
+      }
+      return null;
+    }
+    function paintCtx(pct) {
+      ctxBar.value = pct;
+      ctxFlat.value = pct;
+      ctxFill.style.width = pct + '%';
+      ctxStack.classList.toggle('hot', pct >= 85);
+    }
     function setContextBar(usage) {
       paintCtxWave();
-      if (usage && usage.percent != null) {
-        const pct = Math.max(0, Math.min(100, usage.percent));
-        ctxBar.value = pct;
-        ctxFlat.value = pct;
-        ctxStack.classList.toggle('hot', pct >= 85);
-      }
-      if (!usage) return;
+      const pct = ctxPercent(usage);
+      paintCtx(pct == null ? 0 : pct);
       const parts = [];
-      if (usage.percent != null) parts.push(Math.round(usage.percent) + '%');
-      if (usage.tokens != null && usage.contextWindow) {
+      if (pct != null) parts.push(Math.round(pct) + '%');
+      if (usage && usage.tokens != null && usage.contextWindow) {
         parts.push(fmtTokens(usage.tokens) + '/' + fmtTokens(usage.contextWindow));
       }
       statusCtx.textContent = parts.join(' · ');
@@ -2591,7 +2642,7 @@ function stage0Logic(wsUrl: string): string {
           taskWidgetData = m.taskWidgetData || null;
           renderWidgets();
           setModelName(m.model);
-          if (m.context) setContextBar(m.context); else { ctxBar.value = 0; ctxFlat.value = 0; ctxStack.classList.remove('hot'); }
+          if (m.context) setContextBar(m.context); else paintCtx(0);
           agentRunning = !!m.agentRunning;
           held = m.held || [];
           runHolding = !!m.heldRunActive;
@@ -2751,7 +2802,7 @@ function stage0Logic(wsUrl: string): string {
           refreshComposer(); setSendBtn();
           taskWidgetLines = null; taskWidgetData = null;
           renderWidgets();
-          ctxBar.value = 0; ctxFlat.value = 0; ctxStack.classList.remove('hot');
+          paintCtx(0);
           break;
       }
     }
