@@ -20,7 +20,10 @@ import {broadcast as wsBroadcast} from '../../src/remote/broadcast.js'
 import {_setSink, getState, reset, snapshot} from '../../src/remote/session-state.js'
 import {flashTerminalWidget, NOTIFY_CLEAR_MS} from '../../src/task/widget.js'
 import {registerTask} from '../../src/task/orchestrator.js'
-import {STYLES} from '../../src/remote/ui-styles.js'
+import {mduiHtml} from '../../src/remote/ui-mdui.js'
+
+/** The sysnote rule lives inside the MD UI's inline CSS. */
+const STYLES = mduiHtml('ws://localhost:0/ws')
 
 /** pushNotify is fire-and-forget over web-push and leaves no frame on the wire,
  *  so the only way to see whether a card woke someone's phone is to record it. */

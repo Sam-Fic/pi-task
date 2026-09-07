@@ -993,6 +993,9 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     border-radius: var(--mdui-shape-corner-extra-small);
     padding: 0.25rem 0.6rem;
     box-sizing: border-box;
+    /* addSystemLine sets textContent, so without this a multi-line note
+       (e.g. the /task-config settings table) collapses to one line. */
+    white-space: pre-wrap;
 }
 
 /* Copy buttons: the code-block one sits in its header bar (rendered by the

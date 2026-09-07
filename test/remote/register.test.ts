@@ -6,7 +6,7 @@ import {registerTaskAuto} from '../../src/task/auto-orchestrator.js'
 import {registerTaskPlan} from '../../src/task/plan-orchestrator.js'
 import {getBridge, dispatchRemoteLine, makeShimmedCtx} from '../../src/remote/bridge.js'
 import {broadcast as wsBroadcast} from '../../src/remote/broadcast.js'
-import {clientScript} from '../../src/remote/ui-script.js'
+import {mduiHtml as clientScript} from '../../src/remote/ui-mdui.js'
 
 afterEach(() => {
     const b = getBridge()
