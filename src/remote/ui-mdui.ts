@@ -903,9 +903,10 @@ mdui-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Cmd suggestions (above input). Same 28px family as the notif/model panels;
-   the list is flush inside the clip, so the container's radius is the only
-   one that shows. */
+/* Cmd suggestions (above input). Same 28px family as the notif/model panels.
+   Rows are inset 0.5rem and rounded 1.25rem (mdui-list-item's native
+   "rounded" attribute, whose state layer follows the token) — concentric
+   with the panel exactly like the model menu: 28 − 8 = 20. */
 #cmd-suggestions {
     position: absolute;
     bottom: 100%;
@@ -918,12 +919,16 @@ mdui-list#notif-list {
     display: none;
     max-height: 14rem;
     overflow-y: auto;
+    padding: 0.5rem;
+    box-sizing: border-box;
 }
 #cmd-suggestions mdui-list { padding: 0; }
 #cmd-suggestions mdui-list-item {
     cursor: pointer;
     font-size: 0.9rem;
+    --shape-corner-rounded: 1.25rem;
 }
+#cmd-suggestions mdui-list-item + mdui-list-item { margin-top: 0.1rem; }
 
 /* Scroll-to-bottom (mdui-fab) */
 m3e-fab#scroll-bottom {
@@ -2031,6 +2036,10 @@ function stage0Logic(wsUrl: string): string {
       const list = document.createElement('mdui-list');
       cmdActive.forEach((cmd, i) => {
         const el = document.createElement('mdui-list-item');
+        // mdui's native rounded variant: the row (and its ripple/state
+        // layer) becomes a rounded rect inset from the panel — the model
+        // menu's recipe, not a full-bleed highlight.
+        el.setAttribute('rounded', '');
         if (i === cmdIndex) el.setAttribute('active', '');
         el.setAttribute('headline', cmd.name);
         el.setAttribute('description', cmd.desc);
