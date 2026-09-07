@@ -961,6 +961,9 @@ mdui-list#notif-list {
 m3e-fab#scroll-bottom {
     position: absolute;
     bottom: 1rem; right: var(--col-pad);
+    /* Must out-rank the code-head pill (z-index: 1) — a code block at the
+       bottom of the viewport otherwise floats its copy button over this. */
+    z-index: 5;
     transform: scale(0) rotate(-90deg);
     opacity: 0;
     pointer-events: none;
