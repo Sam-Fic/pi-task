@@ -246,9 +246,11 @@ html, body {
 }
 #app-bar .grow { flex: 1; }
 /* The model name takes the old title slot; falls back to the app name
-   (muted) before the first snapshot reports a model. It doubles as the
-   picker trigger: a tonal pill (hierarchy by color, never a hairline
-   stroke) whose caret flips while the menu is open. */
+   (muted) before the first snapshot reports a model. The pill is the
+   activation surface: an m3e-menu-trigger nested inside augments it with
+   the menu relationship and opens #model-menu; a tonal background
+   (hierarchy by color, never a hairline stroke) whose caret flips while
+   the menu is open. */
 #model-picker {
     display: flex;
     align-items: center;
@@ -265,6 +267,9 @@ html, body {
     background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 7%, transparent);
     transition: background 200ms;
 }
+/* The trigger is a pure behavior wrapper: dissolve its box so the name and
+   caret participate directly in the pill's flex layout. */
+#model-picker m3e-menu-trigger { display: contents; }
 #model-picker:hover {
     background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 13%, transparent);
 }
@@ -985,88 +990,30 @@ mdui-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Model picker menu (opened from the app-bar pill). Same surface recipe as
-   the notif panel: elevated tonal container, no stroke. Concentric corners:
-   rows carry --_row-r and the menu pads them by --_menu-pad, so the menu's
-   radius is the sum and every arc shares a center with the row beneath it. */
+/* Model picker menu (m3e-menu, anchored to the app-bar pill by the
+   library). Shape, padding, line metrics and sizing are all the
+   component's defaults. Only theme integration (surface color + elevation
+   onto the mdui tokens) and the scroll extent are mapped. */
 #model-menu {
-    --_row-r: 1.25rem;
-    --_menu-pad: 0.5rem;
-    position: fixed;
-    top: calc(var(--safe-top) + 4rem);
-    left: 1rem;
-    width: min(320px, calc(100vw - 2rem));
-    max-height: 55vh;
-    background: rgb(var(--mdui-color-surface-container-high));
-    border-radius: calc(var(--_row-r) + var(--_menu-pad));
-    box-shadow: var(--mdui-elevation-level3);
-    padding: var(--_menu-pad);
-    box-sizing: border-box;
-    display: none;
-    flex-direction: column;
-    z-index: 60;
+    --m3e-menu-container-color: rgb(var(--mdui-color-surface-container-high));
+    --m3e-menu-container-elevation: var(--mdui-elevation-level3);
+    --m3e-menu-container-max-height: 55vh;
 }
-#model-menu.open { display: flex; }
-#model-menu-title {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    color: rgb(var(--mdui-color-on-surface-variant));
-    padding: 0.3rem 0.75rem 0.55rem;
-}
-#model-list {
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    min-height: 0;
-}
-.model-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: var(--_row-r);
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 150ms;
-}
-.model-row:hover {
-    background: color-mix(in srgb, rgb(var(--mdui-color-on-surface)) 8%, transparent);
-}
-.model-row.current {
-    background: rgb(var(--mdui-color-secondary-container));
-}
-.model-row.current:hover {
-    background: color-mix(in srgb, rgb(var(--mdui-color-secondary-container)) 80%, rgb(var(--mdui-color-on-secondary-container)));
-}
+/* Two-line rows inside the plain radios: the item lays its default slot out
+   as a flex row, so one block wrapper stacks the name over the provider.
+   Font metrics (line-height, sizes, shape) stay the component's defaults. */
 .model-row-main {
-    flex: 1;
+    display: block;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
 }
 .model-row-name {
-    font-size: 0.95rem;
+    display: block;
     font-weight: 600;
-    line-height: 1.3;
-    color: rgb(var(--mdui-color-on-surface));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 .model-row-spec {
+    display: block;
     font-size: 0.74rem;
     color: rgb(var(--mdui-color-on-surface-variant));
-}
-.model-row.current .model-row-name,
-.model-row.current .model-row-spec {
-    color: rgb(var(--mdui-color-on-secondary-container));
-}
-.model-row m3e-icon {
-    --m3e-icon-size: 1.35rem;
-    flex-shrink: 0;
-    color: rgb(var(--mdui-color-on-secondary-container));
 }
 #model-empty {
     padding: 1rem;
@@ -1278,9 +1225,11 @@ export function mduiHtml(wsUrl: string): string {
           <div id="app-bar">
             <m3e-icon-button id="menu-btn" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
             <span id="status-dot"></span>
-            <div id="model-picker" role="button" tabindex="0" aria-haspopup="menu" aria-label="切换模型">
-              <span id="status-model">π-task remote</span>
-              <span id="model-caret" aria-hidden="true"></span>
+            <div id="model-picker">
+              <m3e-menu-trigger for="model-menu" aria-label="切换模型">
+                <span id="status-model">π-task remote</span>
+                <span id="model-caret" aria-hidden="true"></span>
+              </m3e-menu-trigger>
             </div>
             <span id="status-ctx"></span>
             <span class="grow"></span>
@@ -1354,13 +1303,13 @@ export function mduiHtml(wsUrl: string): string {
     </div>
   </div>
 
-  <!-- Model picker menu: opened from the app-bar name, fed by the models
-       frame (authed catalogue + current spec). Rows send set_model; the
-       server answers with a fresh models frame that ticks the new row. -->
-  <div id="model-menu" role="menu" aria-hidden="true">
-    <div id="model-menu-title">切换模型</div>
-    <div id="model-list"></div>
-  </div>
+  <!-- Model picker menu (m3e-menu): anchored above/below the app-bar pill by
+       the library's anchoring, opened by the nested m3e-menu-trigger. Fed by
+       the models frame (authed catalogue + current spec) rendered as radio
+       items; choosing one sends set_model, and the fresh frame that answers
+       re-renders the tick — no optimistic check, so a rejected switch can't
+       leave the menu lying. -->
+  <m3e-menu id="model-menu" aria-label="切换模型"></m3e-menu>
 
   <!-- Prompt dialog: shown when pi asks for user input -->
   <mdui-dialog id="prompt-card" close-on-esc headline="π 需要你的输入">
@@ -1434,7 +1383,6 @@ function stage0Logic(wsUrl: string): string {
     const notifTitle   = document.getElementById('notif-title');
     const modelPicker  = document.getElementById('model-picker');
     const modelMenu    = document.getElementById('model-menu');
-    const modelList    = document.getElementById('model-list');
     const drawer       = document.getElementById('drawer');
     const menuBtn      = document.getElementById('menu-btn');
     const drawerClose  = document.getElementById('session-drawer-close');
@@ -1505,6 +1453,7 @@ function stage0Logic(wsUrl: string): string {
     import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/drawer-container').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/nav-menu').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/menu').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/loading-indicator').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
@@ -2197,15 +2146,18 @@ function stage0Logic(wsUrl: string): string {
           body: JSON.stringify(sub)
         }).then((r) => r.ok));
     }
+    function closeModelMenu() {
+      if (modelMenuOpen) modelMenu.hide(false);
+    }
     notifBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setModelMenuOpen(false);
+      closeModelMenu();
       setSettingsOpen(false);
       setNotifOpen(!notifOpen);
     });
     settingsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setModelMenuOpen(false);
+      closeModelMenu();
       setNotifOpen(false);
       setSettingsOpen(!settingsOpen);
     });
@@ -2222,63 +2174,52 @@ function stage0Logic(wsUrl: string): string {
 
     // ───────────── Model picker menu ─────────────
     // Fed by the server's models frame (on connect, on session_start and after
-    // each switch). Choosing a row sends set_model; the fresh frame that comes
-    // back moves the tick — no optimistic check, so a rejected switch can't
-    // leave the menu lying.
+    // each switch). Rendered as m3e-menu-item-radio rows inside the anchored
+    // m3e-menu; choosing one sends set_model, and the fresh frame that comes
+    // back re-renders the tick — no optimistic check, so a rejected switch
+    // can't leave the menu lying.
     function escAttr(s) {
       return escHtml(s).replace(/"/g, '&quot;');
     }
     function renderModelMenu() {
       if (!modelCatalog.models.length) {
-        modelList.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
+        modelMenu.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
         return;
       }
       let html = '';
       for (const md of modelCatalog.models) {
         const cur = md.spec === modelCatalog.current;
         const provider = md.spec.split('/')[0] || md.spec;
-        html += '<div class="model-row' + (cur ? ' current' : '') + '" role="menuitemradio"'
-              + ' aria-checked="' + (cur ? 'true' : 'false') + '"'
-              + ' data-spec="' + escAttr(md.spec) + '">'
-              + '<div class="model-row-main">'
+        html += '<m3e-menu-item-radio data-spec="' + escAttr(md.spec) + '"'
+              + (cur ? ' checked' : '') + '>'
+              // Single root child: the item lays its default-slot content out
+              // as a flex ROW (leading check + label), so the two text lines
+              // must live inside one wrapper to stack vertically.
+              + '<span class="model-row-main">'
               + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
               + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
-              + '</div>'
-              + (cur ? '<m3e-icon name="check"></m3e-icon>' : '')
-              + '</div>';
+              + '</span>'
+              + '</m3e-menu-item-radio>';
       }
-      modelList.innerHTML = html;
+      modelMenu.innerHTML = html;
     }
-    function setModelMenuOpen(open) {
-      if (open) setNotifOpen(false);
+    // The trigger opens/closes the menu; we only mirror the state onto the
+    // pill (tonal highlight + caret flip) and refresh the rows on open.
+    modelMenu.addEventListener('toggle', () => {
+      const open = modelMenu.isOpen;
       modelMenuOpen = open;
-      modelMenu.classList.toggle('open', open);
-      modelMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
       modelPicker.classList.toggle('open', open);
-      if (open) renderModelMenu();
-    }
-    modelPicker.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setModelMenuOpen(!modelMenuOpen);
+      if (open) { setNotifOpen(false); renderModelMenu(); }
     });
-    modelPicker.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        setModelMenuOpen(!modelMenuOpen);
-      }
-    });
-    modelList.addEventListener('click', (e) => {
-      const row = e.target && e.target.closest ? e.target.closest('.model-row') : null;
+    modelMenu.addEventListener('click', (e) => {
+      const row = e.target && e.target.closest ? e.target.closest('m3e-menu-item-radio') : null;
       if (!row) return;
       const spec = row.getAttribute('data-spec');
       if (!spec || !ws || ws.readyState !== 1) return;
       ws.send(JSON.stringify({ type: 'set_model', spec }));
       const chosen = modelCatalog.models.find((x) => x.spec === spec);
       showToast(chosen ? '切换模型：' + chosen.name : '切换模型…', 'info');
-      setModelMenuOpen(false);
-    });
-    document.addEventListener('click', (e) => {
-      if (modelMenuOpen && !modelMenu.contains(e.target)) setModelMenuOpen(false);
+      modelMenu.hide(false);
     });
 
     // ───────────── Session sidebar ─────────────
