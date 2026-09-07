@@ -102,7 +102,11 @@ m3e-icon-button#send-btn.armed {
        and rides the browser's system default. */
     --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
     /* Bridge the MD tokens the m3e buttons consume onto the mdui palette,
-       so both libraries follow one theme (light/dark included). */
+       so both libraries follow one theme (light/dark included). m3e's own
+       DesignToken.color.* resolve to var(--md-sys-color-…), so every token a
+       mounted component reads must appear here — the sidebar's drawer and
+       nav-menu additionally consume surface, surface-container-low, outline
+       and scrim. */
     --md-sys-color-primary: rgb(var(--mdui-color-primary));
     --md-sys-color-on-primary: rgb(var(--mdui-color-on-primary));
     --md-sys-color-primary-container: rgb(var(--mdui-color-primary-container));
@@ -117,7 +121,11 @@ m3e-icon-button#send-btn.armed {
     --md-sys-color-on-error-container: rgb(var(--mdui-color-on-error-container));
     --md-sys-color-on-surface: rgb(var(--mdui-color-on-surface));
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
+    --md-sys-color-surface: rgb(var(--mdui-color-surface));
+    --md-sys-color-surface-container-low: rgb(var(--mdui-color-surface-container-low));
     --md-sys-color-surface-container-highest: rgb(var(--mdui-color-surface-container-highest));
+    --md-sys-color-outline: rgb(var(--mdui-color-outline));
+    --md-sys-color-scrim: rgb(var(--mdui-color-scrim));
 }
 html, body {
     height: 100%;
@@ -160,8 +168,16 @@ html, body {
 
 /* Session sidebar. m3e-drawer-container overlays the drawer (over-mode, with
    scrim) on the main column; #main-col takes over #root's old rows so the
-   app-bar/chat/bands layout is untouched. */
-#main-col { display: grid; grid-template-rows: 1fr auto auto auto; min-height: 0; }
+   app-bar/chat/bands layout is untouched. The drawer's .content pane is
+   height:100%, but the slotted column must CLAIM that height — otherwise it
+   sizes to content, the whole page scrolls, and the composer ends up at the
+   bottom of the document instead of the viewport. */
+#main-col {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto auto auto;
+    height: 100%;
+    min-height: 0;
+}
 #drawer { --m3e-drawer-container-width: min(84vw, 20rem); }
 #session-drawer {
     display: flex;
