@@ -44,7 +44,6 @@ const MDUI_CSS = `https://cdn.jsdelivr.net/npm/mdui@${MDUI_VERSION}/mdui.css`
 const BUNDLE_IMPORTS = `
     import {
         setTheme,
-        getTheme,
         snackbar,
     } from '${MDUI_BUNDLE}';
 `
@@ -322,13 +321,15 @@ html, body {
     #status-ctx { display: none; }
 }
 /* App-bar icon pair reads at on-surface (brighter than the icon-button
-   default; the theme button's inline SVG inherits the same color). */
-#theme-toggle,
-#bell {
+   default). */
+#notif-btn,
+#settings-btn {
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface));
 }
-#bell { flex-shrink: 0; }
-#bell.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-primary)); }
+#notif-btn { flex-shrink: 0; }
+/* The bell lights up while push notifications are enabled — passive,
+   glanceable, no tooltip needed. */
+#notif-btn.on { --md-sys-color-on-surface-variant: rgb(var(--mdui-color-primary)); }
 /* Status readout, not an action: a plain pill instead of mdui-chip, whose
    button internals bring ripple/press affordances a passive indicator
    must not have. Neutral tonal pill against the color field. */
@@ -415,8 +416,17 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
 .msg.user { flex-direction: row-reverse; }
 .bubble {
     position: relative;
-    padding: 0.75rem 1rem;
-    border-radius: 1rem;
+    padding: 0.75rem;
+    /* Concentric with the code blocks it wraps: the block's corner arc
+       center sits (code-r + pad, code-r + pad) in from the bubble corner.
+       The padding is uniform, and a code block at the bubble's top/bottom
+       edge gets the same 12px gap as at the sides (its edge margins are
+       zeroed below), so the buffered outer corner is a plain 32px circle —
+       no elliptical slash pair needed. Prose blocks buy their roomier
+       24px side inset below, in their own margins, so the corner math
+       stays code-driven. */
+    --_code-r: calc(1rem + var(--mdui-shape-corner-extra-small));
+    border-radius: calc(var(--_code-r) + 0.75rem);
     background: rgb(var(--mdui-color-surface-container-high));
     color: rgb(var(--mdui-color-on-surface));
     line-height: 1.55;
@@ -427,37 +437,53 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     background: rgb(var(--mdui-color-primary-container));
     color: rgb(var(--mdui-color-on-primary-container));
     border-top-right-radius: 0.5rem;
+    /* Pure-text bubble: no code blocks inside, so the corner math doesn't
+       bind — the prose inset comes straight from the padding. */
+    padding: 0.75rem 1.5rem;
 }
 .msg.assistant .bubble {
+    /* The one tail corner, pointing at the avatar side. The top-right keeps
+       the bubble's concentric elliptical pair — the floating copy circle
+       buffers inside that arc (see .bubble-copy). */
     border-top-left-radius: 0.5rem;
-    /* Concentric with the copy circle that floats in this corner: the 2rem
-       button (radius 1rem) sits 0.15rem inside, so the arc is circle+inset —
-       same math as the code-block/pill pair below. */
-    border-top-right-radius: calc(1rem + 0.15rem);
 }
 
 /* Markdown surface (Stage 1) */
 .bubble.md {
     line-height: 1.55;
 }
+/* Prose buys the roomier 1.5rem/0.875rem inset via its own margins — the
+   bubble's padding stays code-block-tight so the concentric corner math is
+   untouched. Code blocks (div.code-block and headless pre) are deliberately
+   excluded: they keep the tight padded edge the radius buffers around. */
+.bubble.md > p, .bubble.md > ul, .bubble.md > ol, .bubble.md > blockquote,
+.bubble.md > h1, .bubble.md > h2, .bubble.md > h3,
+.bubble.md > h4, .bubble.md > h5, .bubble.md > h6, .bubble.md > table {
+    margin-left: 0.75rem; margin-right: 0.75rem;
+}
 .bubble.md > :first-child { margin-top: 0; }
 /* :last-of-type, not :last-child — the floating copy button is appended
    inside the bubble and would otherwise count as the last block, keeping
-   the real final block's bottom margin (unequal bubble heights). */
+   the real final block's bottom margin (unequal bubble heights). Zeroing
+   covers prose AND edge code blocks: with uniform 0.75rem padding, a code
+   block at the top or bottom edge sits 12px from the bubble edge — the
+   same gap it gets at the sides. */
 .bubble.md > :last-of-type { margin-bottom: 0; }
 .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4, .bubble.md h5, .bubble.md h6 {
-    margin: 0.8em 0 0.4em;
+    /* margin-block, not the shorthand: the prose inset (margin-inline from
+       the child-selector rule above) must survive this rule. */
+    margin-block: 0.8em 0.4em;
     font-weight: 600;
     line-height: 1.25;
 }
 .bubble.md h1 { font-size: 1.4em; }
 .bubble.md h2 { font-size: 1.2em; }
 .bubble.md h3 { font-size: 1.05em; }
-.bubble.md p  { margin: 0.5em 0; }
-.bubble.md ul, .bubble.md ol { margin: 0.5em 0; padding-left: 1.5em; }
-.bubble.md li { margin: 0.2em 0; }
+.bubble.md p  { margin-block: 0.5em; }
+.bubble.md ul, .bubble.md ol { margin-block: 0.5em; padding-left: 1.5em; }
+.bubble.md li { margin-block: 0.2em; }
 .bubble.md blockquote {
-    margin: 0.6em 0;
+    margin-block: 0.6em;
     padding: 0.2em 0.8em;
     border-left: 3px solid rgb(var(--mdui-color-outline-variant));
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -484,10 +510,18 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     font-family: var(--font-mono);
     --_pill-inset: var(--mdui-shape-corner-extra-small);
     background: rgb(var(--mdui-color-surface-container-lowest));
-    border-radius: calc(1rem + var(--_pill-inset));
+    /* Same radius the bubble's concentric formula consumes (--_code-r is
+       defined on .bubble and inherits here). */
+    border-radius: var(--_code-r);
     overflow: hidden;
     margin: 0.6em 0;
     font-size: 0.9em;
+    /* The container owns the inner inset: the nested pre is a bare surface
+       (margin 0, radius 0) clipped by this box, so the dark rect the bubble's
+       corners buffer around is exactly this border edge. Same 0.75em/1em
+       recipe as the headless pre, scaled to this block's 0.9em font. */
+    padding: 0.75em 1em;
+    line-height: 1.4;
 }
 .bubble .code-head {
     position: absolute;
@@ -536,12 +570,16 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     margin: 0;
     border-radius: 0;
 }
-.bubble.md pre {
+/* Direct child only — a pre inside .code-block keeps its own zero-radius
+   rule above and lets the container's clipping own the shape. */
+.bubble.md > pre {
     font-family: var(--font-mono);
     background: rgb(var(--mdui-color-surface-container-lowest));
     color: rgb(var(--mdui-color-on-surface));
     padding: 0.75em 1em;
-    border-radius: var(--mdui-shape-corner-small);
+    /* Headless code blocks share the .code-block radius so the bubble's
+       concentric corner math covers both kinds. */
+    border-radius: var(--_code-r);
     overflow-x: auto;
     margin: 0.6em 0;
     line-height: 1.4;
@@ -552,7 +590,7 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
 }
 .bubble.md table {
     border-collapse: collapse;
-    margin: 0.6em 0;
+    margin-block: 0.6em;
     font-size: 0.9em;
     overflow: hidden;
     border-radius: var(--mdui-shape-corner-small);
@@ -587,10 +625,7 @@ mdui-collapse.thinking {
        text stays on the mixed (mostly neutral) surface. */
     background: color-mix(in srgb, rgb(var(--mdui-color-secondary-container)) 30%, rgb(var(--mdui-color-surface-container)));
     overflow: hidden;
-    transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
-    transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.thinking.open { border-radius: 1.125rem; }
 .thinking .thinking-header {
     display: flex; align-items: center;
     cursor: pointer;
@@ -604,11 +639,10 @@ mdui-collapse.thinking.open { border-radius: 1.125rem; }
     user-select: none;
     /* Flush child of the collapse (through the collapse-item wrapper, so
        "inherit" would resolve against that — set the pair explicitly):
-       concentric with gap 0 means equal radii, open state included. */
+       concentric with gap 0 means equal radii. One radius for both states —
+       the card keeps its collapsed shape when expanded. */
     border-radius: var(--mdui-shape-corner-medium);
-    transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.thinking.open .thinking-header { border-radius: 1.125rem; }
 /* Pure-CSS chevron. An L of side s and stroke t has its centroid
    0.25*(s-t) toward the corner, so the shape is pulled back by that
    amount in its own frame before rotating - the visual mass, not the
@@ -628,6 +662,15 @@ mdui-collapse.thinking.open .thinking-header { border-radius: 1.125rem; }
     flex-shrink: 0;
 }
 mdui-collapse.thinking.open .thinking-header::before { transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift)); }
+/* The live loading indicator sits where the old ✻ glyph was: sized to the
+   header's em (the component default is 38px) and tinted with the header ink
+   so it reads as part of the row, not an imported foreign object. */
+.thinking .thinking-spin {
+    flex-shrink: 0;
+    margin-right: 0.55em;
+    --m3e-loading-indicator-size: 1.1em;
+    --m3e-loading-indicator-active-indicator-color: rgb(var(--mdui-color-on-surface-variant));
+}
 .thinking-body {
     margin: 0;
     padding: 0.5rem 1rem 0.85rem;
@@ -653,10 +696,7 @@ mdui-collapse.tool-call {
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container));
     overflow: hidden;
-    transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
-    transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.tool-call.open { border-radius: 1.125rem; }
 mdui-collapse.tool-call.error {
     background: color-mix(in srgb, rgb(var(--mdui-color-error-container)) 35%, rgb(var(--mdui-color-surface-container)));
 }
@@ -670,11 +710,10 @@ mdui-collapse.tool-call.error {
     line-height: 1.4;
     user-select: none;
     /* Flush child of the collapse — same concentric pair as the thinking
-       header (explicit, since the collapse-item wrapper breaks "inherit"). */
+       header (explicit, since the collapse-item wrapper breaks "inherit").
+       One radius for both states, matching the thinking card. */
     border-radius: var(--mdui-shape-corner-medium);
-    transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.tool-call.open .tool-header { border-radius: 1.125rem; }
 .tool-call .tool-header {
     --_chev-shift: calc((0.4rem - 1.5px) / -4);
 }
@@ -863,14 +902,15 @@ mdui-card#status-panel {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Bell + notif dropdown. Radius matches the model menu — the two are sibling
-   floating panels; its own children (list rows) sit flush and are clipped,
-   so no inner radius constrains it. */
+/* Bell + notif dropdown. Radius matches the model menu — the three are
+   sibling floating panels; its own children (list rows) sit flush and are
+   clipped, so no inner radius constrains it. Anchored under its button
+   (bar row: 0.5rem pad + 2.5rem settings button + 0.6rem gap). */
 #notif-panel {
     position: fixed;
     top: calc(var(--safe-top) + 4rem);
-    right: 1rem;
-    width: 320px; max-height: 60vh;
+    right: 3.6rem;
+    width: min(320px, calc(100vw - 4.6rem)); max-height: 60vh;
     background: rgb(var(--mdui-color-surface-container-high));
     border-radius: var(--mdui-shape-corner-extra-large);
     box-shadow: var(--mdui-elevation-level3);
@@ -881,12 +921,34 @@ mdui-card#status-panel {
     overflow: hidden;
 }
 #notif-panel.open { display: flex; }
+/* Settings dropdown (gear in the app bar): theme mode + thinking auto-
+   collapse. Same surface recipe, anchored under its own button. */
+#settings-panel {
+    position: fixed;
+    top: calc(var(--safe-top) + 4rem);
+    right: 0.5rem;
+    width: min(320px, calc(100vw - 1rem));
+    background: rgb(var(--mdui-color-surface-container-high));
+    border-radius: var(--mdui-shape-corner-extra-large);
+    box-shadow: var(--mdui-elevation-level3);
+    padding: 0.5rem;
+    display: none;
+    flex-direction: column; gap: 0.4rem;
+    z-index: 60;
+    overflow: hidden;
+}
+#settings-panel.open { display: flex; }
 #notif-toggle-row,
+#settings-title,
+.settings-row,
 #thinking-collapse-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 0.4rem 0.6rem;
     font-size: 0.9rem;
 }
+.settings-row { gap: 0.5rem; }
+#settings-title { font-weight: 600; }
+#theme-seg mdui-segmented-button { font-size: 0.78rem; }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
 
 mdui-list#notif-list {
@@ -1082,7 +1144,11 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
 .copy-btn.copied { color: rgb(var(--mdui-color-primary)); }
 .bubble-copy {
     position: absolute;
-    top: 0.15rem; right: 0.15rem;
+    /* Concentric with the bubble's top-right arc: the arc's center sits
+       (code-r + 0.75rem pad, code-r + 0.75rem pad) in from the corner;
+       subtract this button's 1rem radius per axis and the 2rem circle lands
+       dead on that center — riding inside the big curve, not overhanging. */
+    top: calc(var(--_code-r) - 0.25rem); right: calc(var(--_code-r) - 0.25rem);
     width: 2rem; height: 2rem;
     background: rgb(var(--mdui-color-surface-container-high));
     border-radius: 999px;
@@ -1200,8 +1266,8 @@ export function mduiHtml(wsUrl: string): string {
             <span id="status-ctx"></span>
             <span class="grow"></span>
             <span id="status-chip">disconnected</span>
-            <m3e-icon-button id="bell" aria-label="设置与通知"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
-            <m3e-icon-button id="theme-toggle" aria-label="切换主题"></m3e-icon-button>
+            <m3e-icon-button id="notif-btn" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
+            <m3e-icon-button id="settings-btn" aria-label="设置"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
           </div>
           <!-- Flat + wavy stacked: idle shows the flat line; while the
                agent streams the wavy one (which rolls by design) fades in
@@ -1240,17 +1306,33 @@ export function mduiHtml(wsUrl: string): string {
     </m3e-drawer-container>
   </div>
 
-  <!-- Notifications dropdown (bell lives in the app bar) -->
+  <!-- Notifications dropdown: the toggle plus the history list, nothing
+       else — appearance and behaviour settings live in #settings-panel. -->
   <div id="notif-panel" aria-hidden="true">
     <div id="notif-toggle-row">
       <span id="notif-title">通知</span>
       <mdui-switch id="notif-toggle"></mdui-switch>
     </div>
+    <mdui-list id="notif-list"></mdui-list>
+  </div>
+
+  <!-- Settings dropdown: appearance and behaviour only. The theme is a
+       three-way segmented control (light / dark / auto) instead of the old
+       cycling button — one glance shows the current mode. -->
+  <div id="settings-panel" aria-hidden="true">
+    <div id="settings-title">设置</div>
+    <div class="settings-row">
+      <span>深浅色模式</span>
+      <mdui-segmented-button-group id="theme-seg" selects="single" value="auto">
+        <mdui-segmented-button value="light">浅色</mdui-segmented-button>
+        <mdui-segmented-button value="dark">深色</mdui-segmented-button>
+        <mdui-segmented-button value="auto">自动</mdui-segmented-button>
+      </mdui-segmented-button-group>
+    </div>
     <div id="thinking-collapse-row">
       <span>Thinking 自动收起</span>
       <mdui-switch id="thinking-collapse"></mdui-switch>
     </div>
-    <mdui-list id="notif-list"></mdui-list>
   </div>
 
   <!-- Model picker menu: opened from the app-bar name, fed by the models
@@ -1309,7 +1391,10 @@ function stage0Logic(wsUrl: string): string {
     const statusChip   = document.getElementById('status-chip');
     const overlay      = document.getElementById('reconnect-overlay');
     const reconnectMsg = document.getElementById('reconnect-msg');
-    const themeBtn     = document.getElementById('theme-toggle');
+    const notifBtn     = document.getElementById('notif-btn');
+    const settingsBtn  = document.getElementById('settings-btn');
+    const settingsPanel= document.getElementById('settings-panel');
+    const themeSeg     = document.getElementById('theme-seg');
     const cmdSuggestions = document.getElementById('cmd-suggestions');
     const scrollBtn    = document.getElementById('scroll-bottom');
     const heldBar      = document.getElementById('held-bar');
@@ -1323,7 +1408,6 @@ function stage0Logic(wsUrl: string): string {
     const promptRecText= document.getElementById('prompt-rec-text');
     const promptInput  = document.getElementById('prompt-input');
     const promptButtons= document.getElementById('prompt-buttons');
-    const bell         = document.getElementById('bell');
     const notifPanel   = document.getElementById('notif-panel');
     const notifList    = document.getElementById('notif-list');
     const notifToggle  = document.getElementById('notif-toggle');
@@ -1353,6 +1437,7 @@ function stage0Logic(wsUrl: string): string {
     let stopArmed = false, stopArmTimer = null;
     let notifHistory = [];
     let notifOpen = false;
+    let settingsOpen = false;
     let modelCatalog = {current: null, models: []};
     let modelMenuOpen = false;
     let sessionData = {current: null, sessions: []};
@@ -1401,6 +1486,7 @@ function stage0Logic(wsUrl: string): string {
     import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/drawer-container').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/nav-menu').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/loading-indicator').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -1423,26 +1509,18 @@ function stage0Logic(wsUrl: string): string {
       }
     }
 
-    // ───────────── Theme ─────────────
-    const ICON_SUN  = '<path fill="currentColor" d="M12 18V6a6 6 0 0 0 0 12zm0-16a1 1 0 0 1 1 1v1a1 1 0 0 1-2 0V3a1 1 0 0 1 1-1zm0 16a1 1 0 0 1 1 1v1a1 1 0 0 1-2 0v-1a1 1 0 0 1 1-1zM4.22 4.22a1 1 0 0 1 1.41 0l.71.71a1 1 0 1 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41zm13.44 13.44a1 1 0 0 1 1.41 0l.71.71a1 1 0 1 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41zM2 12a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1zm17 0a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2h-1a1 1 0 0 1-1-1zM4.22 19.78a1 1 0 0 1 0-1.41l.71-.71a1 1 0 1 1 1.41 1.41l-.71.71a1 1 0 0 1-1.41 0zm13.44-13.44a1 1 0 0 1 0-1.41l.71-.71a1 1 0 1 1 1.41 1.41l-.71.71a1 1 0 0 1-1.41 0z"/>';
-    const ICON_MOON = '<path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>';
-    const ICON_AUTO = '<path fill="currentColor" d="M12 22a10 10 0 1 1 10-10 10 10 0 0 1-10 10zm0-2a8 8 0 0 0 0-16z"/>';
-    function paintThemeIcon(t) {
-      themeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20">'
-        + (t === 'light' ? ICON_MOON
-        : t === 'dark'  ? ICON_AUTO
-        :                 ICON_SUN)
-        + '</svg>';
-    }
-    const stored = localStorage.getItem('pi-task-theme') || 'auto';
-    setTheme(stored);
-    paintThemeIcon(stored);
-    themeBtn.addEventListener('click', () => {
-      const cur = getTheme();
-      const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'auto' : 'light';
+    // ───────────── Theme (in #settings-panel) ─────────────
+    // A three-way segmented control (light / dark / auto) sits in the
+    // settings panel — former dedicated app-bar button removed. The
+    // segmented control reflects the current value and drives setTheme.
+    const storedTheme = localStorage.getItem('pi-task-theme') || 'auto';
+    setTheme(storedTheme);
+    if (themeSeg) themeSeg.value = storedTheme;
+    if (themeSeg) themeSeg.addEventListener('change', () => {
+      const next = themeSeg.value === '' ? 'auto' : String(themeSeg.value);
       setTheme(next);
       localStorage.setItem('pi-task-theme', next);
-      paintThemeIcon(next);
+      showToast(next === 'auto' ? '跟随系统深浅色' : next === 'dark' ? '已切换为深色模式' : '已切换为浅色模式', 'info');
     });
 
     // ───────────── Status ─────────────
@@ -1761,7 +1839,7 @@ function stage0Logic(wsUrl: string): string {
 
     // ───────────── Stage 2: Thinking ─────────────
     function thinkingSummary(n) {
-      return '✻ Thinking… (' + n + (n === 1 ? ' line' : ' lines') + ')';
+      return 'Thinking… (' + n + (n === 1 ? ' line' : ' lines') + ')';
     }
     function thinkingLineCount(text) {
       return text ? text.split('\\n').length : 0;
@@ -1774,6 +1852,14 @@ function stage0Logic(wsUrl: string): string {
       const header = document.createElement('div');
       header.setAttribute('slot', 'header');
       header.className = 'thinking-header';
+      // The live loading indicator marks streaming; finished cards carry the
+      // label alone — a spinner on a folded card would read as activity
+      // that isn't there.
+      if (live) {
+        const spin = document.createElement('m3e-loading-indicator');
+        spin.className = 'thinking-spin';
+        header.appendChild(spin);
+      }
       const lbl = document.createElement('span');
       lbl.className = 'thinking-label';
       lbl.textContent = thinkingSummary(thinkingLineCount(text));
@@ -1823,6 +1909,7 @@ function stage0Logic(wsUrl: string): string {
           // event, which would strand the .open class (chevron + shape).
           currentThinking.classList.remove('open');
         }
+        currentThinking.querySelector('.thinking-spin')?.remove();
         currentThinking = null; thinkingText = '';
         stopSpinIfIdle();
       } else {
@@ -2004,7 +2091,7 @@ function stage0Logic(wsUrl: string): string {
     }
     function updateBell() {
       const on = notifyEnabled();
-      bell.classList.toggle('on', on);
+      notifBtn.classList.toggle('on', on);
       notifToggle.checked = on;
       updateThinkingCollapseSwitch();
     }
@@ -2014,13 +2101,21 @@ function stage0Logic(wsUrl: string): string {
       notifPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
       if (open) { renderNotifList(); updateBell(); }
     }
+    function setSettingsOpen(open) {
+      settingsOpen = open;
+      settingsPanel.classList.toggle('open', open);
+      settingsPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) updateThinkingCollapseSwitch();
+    }
     thinkingCollapse.addEventListener('change', () => {
       localStorage.setItem(THINKING_COLLAPSE_KEY, thinkingCollapse.checked ? '1' : '0');
       if (thinkingCollapse.checked) {
-        // Fold the blocks that are already sitting expanded on the page.
+        // Fold the blocks already sitting expanded on the page. value=[] is
+        // the group's own toggle path — clearing the attribute instead
+        // re-sets value to undefined in the same Lit update and mdui's
+        // observer throws before updateItems() runs, stranding them open.
         document.querySelectorAll('mdui-collapse.thinking.open').forEach((c) => {
-          c.value = '';
-          c.removeAttribute('value');
+          c.value = [];
           c.classList.remove('open');
         });
       }
@@ -2083,14 +2178,24 @@ function stage0Logic(wsUrl: string): string {
           body: JSON.stringify(sub)
         }).then((r) => r.ok));
     }
-    bell.addEventListener('click', (e) => {
+    notifBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       setModelMenuOpen(false);
+      setSettingsOpen(false);
       setNotifOpen(!notifOpen);
     });
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setModelMenuOpen(false);
+      setNotifOpen(false);
+      setSettingsOpen(!settingsOpen);
+    });
     document.addEventListener('click', (e) => {
-      if (notifOpen && !notifPanel.contains(e.target) && e.target !== bell) {
+      if (notifOpen && !notifPanel.contains(e.target) && e.target !== notifBtn) {
         setNotifOpen(false);
+      }
+      if (settingsOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+        setSettingsOpen(false);
       }
     });
     notifToggle.addEventListener('change', togglePush);
