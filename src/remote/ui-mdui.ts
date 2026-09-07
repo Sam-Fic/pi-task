@@ -190,12 +190,12 @@ html, body {
 #model-picker {
     display: flex;
     align-items: center;
-    gap: 0.05rem;
+    gap: 0.7rem;
     /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
        names still ellipsize when the row genuinely runs out of room. */
     flex: 0 1 auto;
     min-width: 0;
-    padding: 0.2rem 0.3rem 0.2rem 0.65rem;
+    padding: 0.2rem 0.7rem 0.2rem 0.65rem;
     border-radius: 999px;
     cursor: pointer;
     user-select: none;
@@ -226,13 +226,21 @@ html, body {
     color: rgb(var(--mdui-color-on-secondary-container));
 }
 #model-caret {
-    --m3e-icon-size: 1.4rem;
+    /* Same pure-CSS chevron as the thinking/tool headers (see --_chev-shift
+       there): an L of side s and stroke t, centroid pulled back 0.25*(s-t)
+       so the visual mass rides the flex centerline. Closed points down,
+       open flips 180deg up — same spring as the card chevrons. */
+    --_chev-shift: calc((0.4rem - 1.5px) / -4);
+    width: 0.4rem; height: 0.4rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift));
+    transition: transform 350ms var(--m3e-spring-fast);
     flex-shrink: 0;
     color: rgb(var(--mdui-color-on-surface-variant));
-    transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 #model-picker.open #model-caret {
-    transform: rotate(180deg);
+    transform: rotate(-135deg) translate(var(--_chev-shift), var(--_chev-shift));
     color: rgb(var(--mdui-color-on-secondary-container));
 }
 #status-model.fallback {
@@ -1093,7 +1101,7 @@ export function mduiHtml(wsUrl: string): string {
             <span id="status-dot"></span>
             <div id="model-picker" role="button" tabindex="0" aria-haspopup="menu" aria-label="切换模型">
               <span id="status-model">π-task remote</span>
-              <m3e-icon id="model-caret" name="arrow_drop_down" filled></m3e-icon>
+              <span id="model-caret" aria-hidden="true"></span>
             </div>
             <span id="status-ctx"></span>
             <span class="grow"></span>
@@ -1271,8 +1279,6 @@ function stage0Logic(wsUrl: string): string {
                 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'],
         arrow_downward: ['m20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z',
                          'm20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z'],
-        arrow_drop_down: ['M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z',
-                          'M7 10l5 5 5-5z'],
         check: ['M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
                 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'],
         settings: ['M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.566.566 0 0 0-.18-.03c-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
