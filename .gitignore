@@ -3,6 +3,7 @@ dist/
 plans/
 docs/
 nexttask*.md
+.codebuddy/
 
 # Negations must follow the ignore rules above to take effect.
 !test/workers/__fixtures__/node_modules/
