@@ -2,7 +2,7 @@ import {createServer} from 'node:http'
 import {networkInterfaces} from 'node:os'
 import {WebSocketServer} from 'ws'
 import {addClient, removeClient, sendTo} from './broadcast.js'
-import {answerPrompt} from './bridge.js'
+import {answerPrompt, publishNotify} from './bridge.js'
 import {getState, snapshot} from './session-state.js'
 import {isClientMessage} from './protocol.js'
 import type {ModelsMessage} from './protocol.js'
@@ -250,26 +250,35 @@ export async function startServer(
                 return // ignore malformed JSON
             }
             if (!isClientMessage(msg)) return
-            if (msg.type === 'interrupt') {
-                onInterrupt?.()
-                return
+            // Every branch below calls back into pi (extension APIs, bridge
+            // commands, SessionState). A throw that escapes here reaches pi's
+            // uncaughtException handler and KILLS the agent — the remote is an
+            // optional surface and must never take the host down, so any
+            // handler error degrades to a toast on the browser that sent it.
+            try {
+                if (msg.type === 'interrupt') {
+                    onInterrupt?.()
+                    return
+                }
+                if (msg.type === 'prompt_answer') {
+                    answerPrompt(msg.id, msg.value)
+                    return
+                }
+                if (msg.type === 'clear_held') {
+                    onClearHeld?.()
+                    return
+                }
+                if (msg.type === 'set_model') {
+                    onSetModel?.(msg.spec)
+                    return
+                }
+                // type === 'message': ignore while a prompt is pending (composer is
+                // disabled in the browser; this is the server-side guard).
+                if (getState().prompt) return
+                onMessage(msg.text)
+            } catch (err) {
+                publishNotify(`Remote handler failed: ${(err as Error).message}`, 'error')
             }
-            if (msg.type === 'prompt_answer') {
-                answerPrompt(msg.id, msg.value)
-                return
-            }
-            if (msg.type === 'clear_held') {
-                onClearHeld?.()
-                return
-            }
-            if (msg.type === 'set_model') {
-                onSetModel?.(msg.spec)
-                return
-            }
-            // type === 'message': ignore while a prompt is pending (composer is
-            // disabled in the browser; this is the server-side guard).
-            if (getState().prompt) return
-            onMessage(msg.text)
         })
 
         ws.on('close', () => {

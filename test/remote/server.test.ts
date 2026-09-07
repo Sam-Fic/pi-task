@@ -625,3 +625,25 @@ test('set_model with an empty spec is dropped before the callback', async () => 
     ws.close()
     srv.stop()
 })
+
+test('a handler that throws synchronously degrades to an error toast, never an uncaughtException', async () => {
+    // The real killer this guards: pi invalidates a captured ExtensionAPI on
+    // every session replacement, and calling it throws SYNCHRONOUSLY. That
+    // throw used to escape the ws message handler and pi exited.
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        () => {
+            throw new Error('This extension ctx is stale after session replacement or reload.')
+        }
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    await new Promise(r => ws.on('open', r))
+    ws.send(JSON.stringify({type: 'set_model', spec: 'p/a'}))
+    const frame = await once(ws, 'notify')
+    expect(frame).toMatchObject({type: 'notify', level: 'error'})
+    ws.close()
+    srv.stop()
+})
