@@ -1,161 +1,211 @@
-Re-run the live docs test across TypeScript, Rust and Haskell, score it, then keep
-improving until the time is gone. Budget is long — about 12 hours — so a run is the
-start of the session, not the whole of it.
+# Step 0 — arm the keep-alive before anything else
 
-Run it end to end without stopping to ask. Ask only if a preflight check fails or
-something is genuinely ambiguous.
+Paste this as your first action, and nothing before it. It is mandatory, not
+optional. It arms the keep-alive AND starts the work, so it is the only thing you
+need to paste.
 
-Read `DOC_REGRESSINONS.md` first. Sections 0-4 are the loop. The last two sections are
-the two 2026-09 re-runs and the thirteen defects. Do not re-derive any of it.
-
-## What changed since the last run
-
-Published as `@mjasnikovs/pi-task@0.40.5` (branch `docs-live-test`, tag `v0.40.5`),
-`bun run test` green at 4312, `npm run lint:check` green.
-
-- **Defect 11 — the definition hop could not reach a function.** `hopNames` accepted
-  only `/^[A-Z]/` names and `definitionChunk` found only TYPE declarations, so
-  `from_str`, `safeParse`, `into_make_service` and `parseJSON` were never candidates.
-  Widened, plus a whole-word value fallback, and the alias cap no longer binds
-  query-named hops. **48.6% → 22.9%** of named declarations missed, +0.7% bytes.
-- **Defect 10 — the fidelity scorer failed the correct answer.** A symbol named in
-  order to DENY it scored as a fabrication. Fixed in `scripts/docs-live-audit.ts`.
-- **Defect 13 — the seed now writes a `.gitignore`**, so autoCommit stops committing
-  `node_modules/`, `target/` and `dist-newstyle/`.
-
-**Defect 11 is index-side only.** It proves the declaration now reaches the extraction
-child. It does NOT prove an answer got better, and that distinction is the whole point
-of this run — last time serde_json lost 51 duplicate chunks and its `from_str` answer
-did not move at all.
-
-## Rule: the container must run the published build
-
-```bash
-docker start mx5-n
-docker exec mx5-n bash -lc 'cd ~/.pi/agent/npm && npm i @mjasnikovs/pi-task@0.40.5 --no-audit --no-fund --loglevel=error
-  node -p "require(process.env.HOME+\"/.pi/agent/npm/node_modules/@mjasnikovs/pi-task/package.json\").version"'
+```
+/loop 10m Read NEXT-SESSION-PROMPT.md and DOC_REGRESSINONS.md, then continue the docs loop. Work "The work, in order" top down, measure each item with the cheapest instrument that can move it, fix, measure again, record the number in DOC_REGRESSINONS.md. Do not stop when an item closes — start the next one. Do not ask whether to continue. Stop only when the user says stop.
 ```
 
-The install is not optional even if the version already reads `0.40.5`: an earlier
-session hand-copied `dist/`, and the session before this one copied a single file into
-the container to measure with. The tree on disk may be a build nobody can name.
+Every 10 minutes it re-enters the loop, so a session that would have halted between
+items carries on instead. The rule below says never stop; this is what enforces it.
+Without it the rule is a wish.
 
-Confirm the fixes are in what npm just put there:
+**The `/loop` is a tool call, not a preamble.** The 2026-09-06 session read this
+line, started the work, and never armed the timer — the text reads like context, so
+schedule it FIRST and only then read anything.
 
-```bash
-docker exec mx5-n bash -lc 'D=$HOME/.pi/agent/npm/node_modules/@mjasnikovs/pi-task/dist/workers
-  for m in acceptedEnd chunkerFingerprint retrievedText IDENTIFIER_SHAPED valueChunk; do
-    printf "%-20s %s\n" $m "$(grep -rl $m $D/ | head -1 || echo MISSING)"; done'
+It is session-only and expires after 7 days. Arm it again in the next session.
+
+---
+
+Now keep improving the docs tool. Read `DOC_REGRESSINONS.md`, all of it. None of it
+needs re-deriving.
+
+**This is a standing loop.** Measure, fix, measure, fix, and keep going. Finishing
+an item is the signal to start the next one, not a place to stop and report. Do
+not ask whether to continue. **Stop only when the user says stop.** Ask only if a
+preflight fails or something is genuinely ambiguous. The full rule, including what
+to do when "Still open" empties, is the loop section of `DOC_REGRESSINONS.md`.
+
+## Do not start with a live run
+
+The docs worker is a **subagent**. `docsLookup` is a function of (chunks, query)
+that spawns one `--no-tools` child, so almost everything open is reachable in
+minutes instead of four hours.
+
+```
+docsRaw(pkg, query, cwd)  ->  chunks          retrieval half
+docsLookup(chunks, query) ->  answer          extraction half, one child
 ```
 
-Five hits, or stop.
+A full `/task-auto` run is a **discovery** instrument, and the 2026-09-06 run is
+the proof: it found defect 18 and nothing else, because the defect-14 condition it
+was launched to verify **did not recur**. Its query set has never repeated — five
+runs, every recorded query distinct — so two arms are never compared on the same
+stimulus.
 
-## Do NOT move the cache aside
-
-The freshness hash covers the chunker now, so leaving the cache in place is itself a
-check. Read the counts before and after; nothing should re-index this time, because
-the chunker did not change:
-
-```bash
-docker exec mx5-n bash -lc 'node -e "
-import(\"node:sqlite\").then(({DatabaseSync})=>{
-const db=new DatabaseSync(process.env.HOME+\"/.cache/pi-worker/docs.sqlite\")
-for(const r of db.prepare(\"select ecosystem,name,count(*) c,count(distinct content) d from chunks group by 1,2\").all())
-  console.log(r.ecosystem,r.name,\"chunks=\"+r.c,\"dupes=\"+(r.c-r.d))})"'
-```
-
-Expect serde 297/0, axum 381/0, serde_json 288/0, zod 1078/0, aeson 1326/55.
-
-## Check the hop FIRES, after three answers, not at the audit
-
-This is the equivalent of last session's `retrievedText` check. If the hop is not
-firing, the run measures the old build and you find out four hours late.
+`scripts/docs-replay.ts` is the instrument for verification. Records carry
+`retrievedText` and a matching `contentSha256`, so it replays the real prompt with
+no retrieval and no network. `--retrieve <project>` is the exception, for index
+fixes, and it must run in the container.
 
 ```bash
-docker exec mx5-n bash -lc 'node -e "
-const fs=require(\"fs\")
-for (const l of fs.readFileSync(\"/home/agent/docs-live/ts.jsonl\",\"utf8\").trim().split(\"\n\")) {
-  const r=JSON.parse(l)
-  const syms=[...new Set(r.query.match(/[A-Za-z_][A-Za-z0-9_]{3,}/g)||[])].filter(t=>/_/.test(t)||/[a-z][A-Z]/.test(t))
-  const got=syms.filter(s=>new RegExp(\"(?<![A-Za-z0-9_])\"+s+\"(?![A-Za-z0-9_])\").test(r.retrievedText||\"\"))
-  console.log(r.module, \"named\", syms.length, \"symbols, retrieved text carries\", got.length)
-}"'
+PI_BIN=$(command -v pi) bun scripts/docs-replay.ts \
+  live-docs-rerun2-2026-09-06/*.jsonl live-docs-rerun3-2026-09-06/*.jsonl \
+  --only abstained --out /tmp/ledger.jsonl
 ```
 
-`retrievedText` of 0 length means the run is worthless — kill it and find out why.
-Symbols named but never carried means the hop is not reaching them; say which.
+Always `--dry-run` first. It rebuilds every prompt and sends nothing.
 
-## Run it
+**Run it against the same model the recording used.** The record pins the prompt.
+It does not pin the model, and a host model is not the container's.
 
-`DOC_REGRESSINONS.md` sections 1 through 4, exactly. One at a time — a single local
-model serves every child. Haskell is still the run that matters.
+## The work, in order — and when it runs out, go back to the top of the loop
 
-## What to check when it is done
+Defects 14, 16, 18, 20, 21 and 24, the recall gate and seven self-review or
+scorer bugs all closed in the 2026-09-06 session, shipped as **0.40.10** through
+**0.40.14**. Defects 19, 22 and 23 are mechanised and have no lever. Their numbers
+are in `DOC_REGRESSINONS.md`; none needs re-deriving.
 
-Against `live-docs-rerun2-2026-09-06/`:
+One number for the whole session, 0.40.8 against HEAD on the defines harness:
+**80/101 -> 90/101 paired, p = 0.0129**.
 
-| | ts | rs | hs |
-|---|---|---|---|
-| verdict | PASS | PASS | PASS |
-| abstained | 4/17 (24%) | 4/10 (40%) | 5/6 (83%) |
-| 0 invented symbols | 10/13 | 5/6 | 1/1 |
-| build/test | green | green | green |
+**"Still open" is empty.** Every item is shipped, refuted, or filed with its
+mechanism. So the next round starts at the top of the loop: the full run in
+`DOCS-LIVE-RUNBOOK.md` is the only remaining DISCOVERY instrument, and it paid
+twice — re-run 4's three HARD FAILs produced defects 19 to 23, and re-run 5
+verified defect 18 live AND surfaced defect 24 and a scorer artifact that an
+earlier fix in the same session had created.
 
-1. **Did defect 11 reach the ANSWERS?** The only question this run exists for. Re-run
-   the base-rate measurement on the new log — declarations named and not retrieved was
-   17/35 before the fix, 8/35 after, both measured on the OLD run's queries. Then read
-   the `from_str`, `safeParse` and `IntoResponse` answers themselves and say whether
-   they changed. A better index with the same answers is a negative result, and it is
-   the result this loop has produced twice.
-2. **The fidelity row.** 16/20 clean last time with four known-benign flags: `false`
-   from `{ success: false, error }`, `fields`/`are` and `assert` from prose inside a
-   code span, and `adminEmail`, correctly derived from `rename_all = "camelCase"`.
-   Anything else is new — read it before believing it.
-3. **`.gitignore`.** No project should track a build directory. Last run ts tracked
-   1397 files under `node_modules/`.
-4. **hackage.** 3 of 6 hs lookups were `hspec` (defect 12) and 2 of the rest asked for
-   symbols aeson does not have. Read the queries before you read the rate.
+0. **RE-RUN 6 IS ALREADY RUNNING IN THE CONTAINER — score it first.** It was
+   launched on 0.40.14 and left mid-flight when the previous session ended, so it
+   will have finished on its own. Artifacts are in `/home/agent/docs-live/`; the
+   previous run's are in `prev-5/`.
 
-## Read the answers, not the table
+   ```
+   docker exec mx5-n bash -lc 'cat /tmp/chain.log'      # SEQUENCE COMPLETE?
+   docker exec mx5-n bash -lc 'export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"; . ~/.ghcup/env
+     cd /home/agent/docs-live && bun scripts/docs-live-build.ts /home/agent/docs-live/run'
+   ```
+   then copy `run/{ts,rs,hs}`, `*.jsonl` and `*.build.json` out and
+   `bun scripts/docs-live-audit.ts <dir> --build`.
 
-Every finding in this document came from reading `toolText` and `retrievedText` on
-individual records. A green run does not mean the docs tool worked — it means its
-failures were survivable that time.
+   **ts had already settled when the session ended: 4 tasks of 4, 10 records,
+   10% abstention, median retrieved 22,781 bytes.** Re-run 5 on the same feature
+   managed 2 tasks of 4 at 43% abstention and 16,493 bytes. rs was on task 3 of 3.
+   That is the first live evidence for the retrieve-limit change and it agrees
+   with the replay (29% -> 16%); finish reading it before anything else.
 
-## After the run — the open work, in order
+1. **Then: `RETRIEVE_CONTENT_BUDGET`, the same shape as the limit was.**
+   Raising the limit made the byte budget binding. It is 24,000, carries a
+   one-line comment, and has no measurement. Retrieval is swept and monotone with
+   ZERO losses at every step up — 12k 86/101, 24k 97, 36k 100, 48k 101, 96k 101;
+   24k vs 48k is only-24k 0, only-48k 4, p = 0.125. The deciding experiment is the
+   same one that settled the limit: `docs-replay --retrieve`, two arms at 24,000
+   and 48,000, over the recorded records. Two trees, two `XDG_CACHE_HOME`s.
 
-You have hours left. Spend them on these, not on a second identical run.
+2. **Nothing else is open.** `PACKAGE_RETRIEVE_LIMIT` was the
+   last question and it is answered: 8 -> 50, defines 91/101 -> 97/101 and
+   ANSWERED 67/94 -> 79/94, McNemar p = 0.0075, abstention 29% -> 16%. Shipped in
+   0.40.14 and **no live run has exercised it**. That is the first thing the next
+   run measures — the replay corpus says the child answers more; a live run says
+   whether the extra text helps or distracts the workers that read the answers.
 
-1. **Defect 12, a facade package indexes to nothing.** `hspec` is 14 chunks of export
-   lists; every signature is in `hspec-core`, a transitive dep the indexer never opens.
-   No clear path was found: following a re-export means deciding how far to index into
-   transitive deps and there is no principled stopping rule. **Find the stopping rule
-   first, and write it down, before writing any code.** One candidate worth measuring:
-   follow a re-export only when the importing module declares no signatures of its own.
-2. **aeson's 55 duplicate bodies.** The hackage surface extractor truncates a
-   multi-line instance head, so `instance {-# OVERLAPPING #-}` becomes a content-free
-   chunk. 4% of the package, internal generic machinery. Small and self-contained.
-3. **The remaining 8 of 35 missed declarations.** Defect 11 got 17 down to 8. Read
-   which ones are left and whether they share a shape.
+   Do not re-open these: dropping `IDENTIFIER_SHAPED` (90/101 -> 88/101), the
+   older npm-only limit sweep that said the plateau is 16 (it covered zod and hono
+   only), and deriving the defines truth set from the index (124 pairs against
+   101, for a circularity risk).
+
+   **And read this before filing anything as unfixable.** Defects 22 and 23 were
+   both filed with a mechanism and "no lever" — an FTS schema change, or splitting
+   class bodies and orphaning signatures. Both were closed by raising a constant
+   two functions away that nobody had measured: `scotty:scotty` 2/7 -> 7/7,
+   hackage 26/33 -> 33/33. Before writing "no lever", check the constants the
+   mechanism runs inside.
+2. **Run the defines harness before and after anything you change.** It is real
+   now, with tests. `bun scripts/docs-defines.ts … --out a.jsonl` then
+   `--compare a.jsonl b.jsonl` for an exact paired McNemar. Two arms means two
+   trees and two `XDG_CACHE_HOME`s, never one cache re-indexed.
+3. **Defect 14 has no live evidence and may never get it cheaply.** The lever is
+   measured on 12,568 task files (3 fires, 3 true, 0 false) and is precise live
+   (two correct non-fires in the 2026-09-06 ts run, both robust to a deliberately
+   loosened token class). But the failing CONDITION did not recur. Do not burn
+   four hours hoping it recurs. If you want live evidence, build a stimulus that
+   forces it rather than waiting for one.
+4. **Defect 17 — determinism only.** Measured real (55 of 61 records differ) and
+   measured harmless (recall 46/46 both ways). Nothing to ship. Note that defect
+   20 showed the same crosstalk INSIDE one package: two axum/tower queries
+   retrieved fewer bytes after axum gained chunks, with nothing removed.
+
+## Building a new instrument
+
+Two things a retrieval-side harness must do, and neither is optional.
+
+**Run in the container.** Container and host returned different chunks for one
+query, and that alone moved a decided A/B cell from rung 1 to rung 2. Defect 17
+names the mechanism: `bm25()` scores over the whole FTS index, so **hold the
+cache's package set fixed across arms** or you are measuring cache history.
+
+The container is provisioned for this. `/home/agent/pi-task-replay` holds the
+tree with `bun install` already done, and `/home/agent/docs-live/run/{ts,rs,hs}`
+are the seeded projects `--retrieve` points at. Re-copy the repo when src moves.
+For a retrieval-only probe you do not need to reinstall the extension: unpack the
+built `dist` beside the installed package as
+`~/.pi/agent/npm/node_modules/@mjasnikovs/pi-task-next` and import `docs-core.js`
+from there by path, with its own `XDG_CACHE_HOME`. That leaves a running
+`/task-auto` untouched.
+
+**Set `PI_BIN`.** `getPiInvocation` re-invokes `process.argv[1]` when it exists,
+so a script under `scripts/` that spawns a child spawns *itself*, once per record.
+`docs-replay.ts` throws before the first child rather than find out late.
 
 ## Known open — do not report as new
 
 - A query whose key symbol is absent from the corpus cannot be answered. Stripping
-  English stopwords was tested and REFUTED — it moves the failure elsewhere.
-- The 8-minute settle rule can cut the final gate. Tasks and tree are still scoreable.
-- `scotty` has been indexed and never asked about for two runs running.
+  English stopwords was tested and REFUTED; it moves the failure elsewhere.
+- A query naming no type: **REFUTED at STEP 0**, 1 of 158 and that one is the
+  literal query `test`. Not a class.
+- Four fidelity-scorer flags are left and all four are false. A query-echo guard
+  was measured and NOT shipped — there is no confirmed fabrication in the corpus
+  for it to protect.
+- The project corpus cannot see a manifest. Measured at 2 of 158; below the bar,
+  and the one-line glob would produce garbage chunks.
+- Three of the audit's six metrics have never discriminated. Do not quote them.
 
-## If you find something
+## Discipline
 
-Regression test first, and prove it fails on the current tree before writing the fix.
-Show the failing output. If a test cannot fail before the fix — because the fix adds
-the seam it tests — say so and prove the defect on the recorded data instead.
+Regression test first, and prove it fails on the current tree before writing the
+fix. If a test cannot fail before the fix — because the fix adds the seam it tests
+— say so and prove the defect on the recorded data instead.
+
+**Never believe a one-line filter without opening what it selected.** Three did
+that in the 2026-09-06 session and all three produced clean, plausible, false
+findings. They are listed under item 4r in `DOC_REGRESSINONS.md`.
+
+**Self-review your own fix before you ship it.** Five real bugs in that session's
+own new code were found this way and none by the test suite: a whitespace collapse
+that ate a nested bullet's indent, a rename split that turned `Hasher` into `H`, a
+lock read from the crate's root instead of the project's (a machine-dependent
+index), an undefined identifier that reached a test run because lint output was
+discarded, and a content hash that did not cover the rule it was hashing for.
+
+**A fix to how a chunk is SHAPED must move `contentFingerprint()`.** Three
+separate fixes have now hidden one level below a `String(fn)` — the chunker,
+the export-gap helpers, and `surface`, which cargo declares as a wrapper. Each
+would have shipped inert. If you add a function that changes chunk content, add
+it to that ecosystem's fingerprint in the same commit.
 
 Never guess a constant. Defect 11's hop cap was swept (3, 5, 8, uncapped) and the
-measurement chose it. A number you picked because it sounded right is a defect waiting.
+measurement chose it; defect 14's marker window was swept 20 to 4,000, found flat,
+and **deleted** in favour of a clause boundary.
 
-`bun run test` must stay green at 4312. `bun test` alone fails; the `--isolate` in
-`bun run test` is load-bearing. `npm run lint:check` must stay green.
+`bun run test` must stay green at 4448. `bun test` alone fails; the `--isolate` in
+`bun run test` is load-bearing. `npm run lint:check` must stay green — and read ALL of
+its output. Discarding it let an undefined identifier reach a test run; reading
+only its `tail` let a syntax error reach a commit, because the failure was above
+the cut.
 
-Publish a patch version when you ship a fix, and say plainly whether `dist` actually
-changed — a `scripts/`-only change ships a byte-identical build.
+Publish a patch version when you ship a fix, and say plainly whether `dist`
+actually changed — a `scripts/`-only change ships a byte-identical build.

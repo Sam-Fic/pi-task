@@ -15,12 +15,57 @@ import {execFileSync} from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import {readTypeOnlyLog, type TypeOnlyLogRecord} from '../src/workers/typeonly-log.js'
-import {PROJECTS, TRUTH, STALE, type ProjectSpec} from './docs-live-truth.js'
+import {PROJECTS, TRUTH, STALE, type ProjectSpec, type TruthEntry} from './docs-live-truth.js'
 
 const IDENTIFIER_RE = /[A-Za-z_][A-Za-z0-9_']{2,}/g
 const CODE_SPAN_RE = /`([^`]+)`/g
 const SENTENCE_SPLIT_RE = /(?<=[.;])\s+/
 const DENIAL_RE = /\b(not|no|neither|nor|never|cannot|absent|missing|unconfirmed|contradicts)\b|n't/i
+
+/**
+ * Words the LANGUAGE provides, not the package. A literal or a stdlib global says
+ * nothing about the package's API, so it cannot be a fabrication of one. Kept to
+ * one union of the three ecosystems: a name here that a package also exports is
+ * in that package's corpus anyway, so the union costs nothing.
+ */
+const LANGUAGE_WORDS = new Set([
+    'true', 'false', 'null', 'undefined', 'void', 'await', 'async', 'return', 'const', 'let',
+    'JSON', 'Promise', 'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Map', 'Set',
+    'Math', 'console', 'RegExp', 'Symbol', 'BigInt', 'Error', 'TypeError',
+    'Ok', 'Err', 'Some', 'None', 'Vec', 'Option', 'Result', 'bool', 'str', 'u16', 'u32', 'i32',
+    'usize', 'pub', 'struct', 'impl', 'enum', 'trait', 'derive',
+    'Just', 'Nothing', 'Maybe', 'Either', 'Left', 'Right', 'Int', 'Bool', 'True', 'False',
+])
+
+/** Node's own module namespace. `node:fs/promises` is a claim about Node, not about zod. */
+const STDLIB_PATH_RE = /^node:/
+
+/**
+ * Members reached through a language global: the `stringify` of `JSON.stringify`.
+ * The claim is about the language, and the package's corpus has no reason to carry it.
+ */
+function memberOfLanguageGlobal(span: string): Set<string> {
+    const out = new Set<string>()
+    for (const m of span.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*(?:\.|::)\s*([A-Za-z_][A-Za-z0-9_]*)/g))
+        if (LANGUAGE_WORDS.has(m[1])) out.add(m[2])
+    return out
+}
+
+/** `admin_email` and `adminEmail` are the same symbol under `#[serde(rename_all)]`. */
+function caseFold(token: string): string {
+    return token.replace(/[_-]/g, '').toLowerCase()
+}
+
+/**
+ * A hyphenated identifier run, which `IDENTIFIER_RE` splits in two.
+ *
+ * The cargo facade fix files a supplement's chunks under the crate's PUBLISHED
+ * name — `axum-core-0.5.6/src/…` — while Rust code writes `axum_core`, and
+ * `eco-cargo.ts` treats the two as one crate. Without this the corpus offers
+ * `axum` and `core`, never `axumcore`, and the scorer calls the code spelling an
+ * invention.
+ */
+const HYPHENATED_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z_$][\w$]*)+/g
 
 /**
  * Identifiers the answer ASSERTS as code that occur nowhere in what the tool
@@ -40,18 +85,68 @@ const DENIAL_RE = /\b(not|no|neither|nor|never|cannot|absent|missing|unconfirmed
  * is deliberate: these questions name the fabrication, so trusting the query would
  * clear `Use ``decodeFile`` to read a file` as well, and that answer is the defect.
  */
+/**
+ * Retrieval recall, scored only where the run actually put the question.
+ *
+ * The gate is the SYMBOL, not the package. Re-run 3 reported `scotty:ActionM`
+ * missed: it is indexed, a query naming it retrieves it, and no scotty query in
+ * that run named it. Scoring it made the tool answer for a question nobody asked.
+ *
+ * An answer that carries the symbol still counts as a hit however the query was
+ * phrased — the tool volunteering the right name is the behaviour this measures,
+ * and gating that away would be the opposite error.
+ *
+ * Re-scored over all four recorded runs this moves exactly one cell, hs re-run 3
+ * from 3/4 to 3/3, and leaves the other eleven untouched.
+ */
+export function scoreRecall(
+    truth: readonly TruthEntry[],
+    pins: Readonly<Record<string, string>>,
+    byPkg: ReadonlyMap<string, readonly TypeOnlyLogRecord[]>
+): {hit: number; of: number; missed: string[]} {
+    const out = {hit: 0, of: 0, missed: [] as string[]}
+    for (const t of truth) {
+        if (!(t.pkg in pins)) continue
+        const asked = byPkg.get(t.pkg) ?? []
+        if (asked.length === 0) continue
+        const hit = asked.some(r => (r.toolText ?? r.answer).includes(t.symbol))
+        if (!hit && !asked.some(r => r.query.includes(t.symbol))) continue
+        out.of++
+        if (hit) out.hit++
+        else out.missed.push(`${t.pkg}:${t.symbol}`)
+    }
+    return out
+}
+
 export function inventedSymbols(answer: string, corpus: string): string[] {
     const known = new Set(corpus.match(IDENTIFIER_RE) ?? [])
+    const folded = new Set([...known].map(caseFold))
+    for (const run of corpus.match(HYPHENATED_RE) ?? []) folded.add(caseFold(run))
     const out = new Set<string>()
     for (const sentence of answer.split(SENTENCE_SPLIT_RE)) {
         if (DENIAL_RE.test(sentence)) continue
         for (const span of sentence.matchAll(CODE_SPAN_RE)) {
+            if (STDLIB_PATH_RE.test(span[1].trim())) continue
+            const languageMembers = memberOfLanguageGlobal(span[1])
+            // Both directions: the answer may write the hyphenated spelling where
+            // the corpus holds the underscored one. `IDENTIFIER_RE` splits
+            // `tokio-util` into two words the corpus knows separately as neither.
+            const excused = new Set<string>()
+            for (const run of span[1].match(HYPHENATED_RE) ?? []) {
+                if (folded.has(caseFold(run))) for (const part of run.split('-')) excused.add(part)
+            }
             for (const token of span[1].match(IDENTIFIER_RE) ?? []) {
+                if (excused.has(token)) continue
                 // IDENTIFIER_RE admits a trailing `'` so Haskell primes survive whole,
                 // and it swallows the closing quote of a string literal too: `'POST'`
                 // arrives as `POST'`. A prime over a stem the corpus knows is that.
                 if (known.has(token)) continue
                 if (token.endsWith("'") && known.has(token.slice(0, -1))) continue
+                if (LANGUAGE_WORDS.has(token)) continue
+                if (languageMembers.has(token)) continue
+                // Covers two shapes at once: `let router = Router::new()`, a binding named
+                // after its own real type, and `adminEmail` for `admin_email`.
+                if (folded.has(caseFold(token))) continue
                 out.add(token)
             }
         }
@@ -213,15 +308,7 @@ function auditProject(runRoot: string, spec: ProjectSpec, build: boolean): Proje
         const key = r.module.replace(/^@?([^/]+).*$/, '$1')
         byPkg.set(key, [...(byPkg.get(key) ?? []), r])
     }
-    for (const t of TRUTH) {
-        if (!(t.pkg in spec.pins)) continue
-        const asked = byPkg.get(t.pkg) ?? []
-        if (asked.length === 0) continue
-        rep.recall.of++
-        const hit = asked.some(r => (r.toolText ?? r.answer).includes(t.symbol))
-        if (hit) rep.recall.hit++
-        else rep.recall.missed.push(`${t.pkg}:${t.symbol}`)
-    }
+    rep.recall = scoreRecall(TRUTH, spec.pins, byPkg)
     for (const r of records) {
         // The RETRIEVED chunks, never `toolText`. The tool return embeds the child's
         // own prose, so scoring the answer against it asks whether the answer contains

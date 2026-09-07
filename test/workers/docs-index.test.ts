@@ -9,9 +9,11 @@ import {ECOSYSTEMS} from '../../src/workers/docs-ecosystems.js'
 import {retrieveChunks} from '../../src/workers/docs-retrieve.js'
 import {resolvePackage, type ResolvedPackage} from '../../src/workers/docs-resolve.js'
 import {resolveHackage} from '../../src/workers/eco-hackage.js'
+import {resolveCrate} from '../../src/workers/eco-cargo.js'
 
 const FIXTURES = path.resolve(__dirname, '__fixtures__')
 const HS_MODULES = path.join(FIXTURES, 'hs-modules')
+const CARGO_HOME = path.join(FIXTURES, 'cargo-home')
 
 test('ensureIndexed walks tiny-pkg and writes chunks for .d.ts + README', () => {
     const cache = openCache(':memory:')
@@ -448,6 +450,47 @@ describe('a back-compat major directory is not indexed', () => {
     })
 })
 
+describe('the content fingerprint covers every function that shapes a chunk', () => {
+    // Three bugs have now hidden one level below a `String(fn)`: the chunker
+    // (fixed by chunkerFingerprint), the export-gap rule, and cargo's `surface`,
+    // which is the wrapper `content => rustSurface(content)` and shows none of
+    // rustSurface at all. One fingerprint per ecosystem, owned by the ecosystem.
+    test('cargo names its surface extractor and its gap rule, not a wrapper', () => {
+        const fp = ECOSYSTEMS.cargo.contentFingerprint()
+        for (const fn of ['splitRustItems', 'macroWrappedItems', 'runtimeDeps', 'useTargets']) {
+            expect(fp).toContain(fn)
+        }
+        expect(fp).toContain('pub\\s+use')
+    })
+
+    test('hackage names its own', () => {
+        const fp = ECOSYSTEMS.hackage.contentFingerprint()
+        for (const fn of ['haskellSurface', 'exportListText', 'declaredInSurface']) {
+            expect(fp).toContain(fn)
+        }
+    })
+
+    test('npm has no gap rule and says so without pretending to one', () => {
+        expect(ECOSYSTEMS.npm.contentFingerprint()).toContain('content')
+    })
+
+    test('a changed fingerprint re-indexes a cached package', () => {
+        const cache = openCache(':memory:')
+        try {
+            const pkg = resolvePackage('tiny-pkg', FIXTURES)
+            expect(ensureIndexed(cache, pkg).hitCache).toBe(false)
+            expect(ensureIndexed(cache, pkg).hitCache).toBe(true)
+            const moved = {
+                ...ECOSYSTEMS.npm,
+                contentFingerprint: () => `${ECOSYSTEMS.npm.contentFingerprint()} moved`
+            }
+            expect(ensureIndexed(cache, pkg, moved).hitCache).toBe(false)
+        } finally {
+            cache.close()
+        }
+    })
+})
+
 test('the content hash covers the CHUNKER, not just the split regex', () => {
     // The attribute-orphaning bug lived in splitAtMatches. Fixing it changed
     // every cargo package's rows and moved no profile regex, so the fingerprint
@@ -536,6 +579,100 @@ describe('a facade package reaches its implementation', () => {
                 false
             )
             expect(ensureIndexed(cache, facade(), ECOSYSTEMS.hackage, [core()]).hitCache).toBe(true)
+        } finally {
+            cache.close()
+        }
+    })
+})
+
+describe('a cargo facade reaches its implementation', () => {
+    // Defect 16. `pub trait IntoResponse` is declared in `axum-core`; `axum` only
+    // `pub use`s it, so both recorded `IntoResponse` records retrieved eight
+    // chunks and not one of them defined the trait. Same boundary as hackage,
+    // different syntax: Rust has no export list, it has `pub use`.
+    const dirs = {cargoHome: CARGO_HOME, modulesDir: CARGO_HOME}
+    const facade = () => resolveCrate('tiny-axum', CARGO_HOME, dirs)
+    const core = () => resolveCrate('tiny-axum-core', CARGO_HOME, dirs)
+
+    function bodies(cache: ReturnType<typeof openCache>, name: string): string {
+        const rows = cache.db
+            .prepare("SELECT content FROM chunks WHERE ecosystem = 'cargo' AND name = ?")
+            .all(name) as Array<{content: string}>
+        return rows.map(r => r.content).join('\n')
+    }
+
+    test('alone, the facade carries the re-export and never the trait', () => {
+        const cache = openCache(':memory:')
+        try {
+            ensureIndexed(cache, facade(), ECOSYSTEMS.cargo)
+            const text = bodies(cache, 'tiny-axum')
+            expect(text).toContain('IntoResponse')
+            expect(text).not.toContain('trait IntoResponse')
+        } finally {
+            cache.close()
+        }
+    })
+
+    test('with the core crate, the trait declaration arrives', () => {
+        const cache = openCache(':memory:')
+        try {
+            ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()])
+            expect(bodies(cache, 'tiny-axum')).toContain('trait IntoResponse')
+        } finally {
+            cache.close()
+        }
+    })
+
+    test('a glob re-export takes its module wholesale', () => {
+        const cache = openCache(':memory:')
+        try {
+            ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()])
+            // Named nowhere in a `pub use` list — only `pub use …::extract::*` reaches it.
+            expect(bodies(cache, 'tiny-axum')).toContain('trait FromRequest')
+        } finally {
+            cache.close()
+        }
+    })
+
+    test('only the hole is filled, not the whole dependency', () => {
+        const cache = openCache(':memory:')
+        try {
+            ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()])
+            expect(bodies(cache, 'tiny-axum')).not.toContain('unrelated_helper')
+        } finally {
+            cache.close()
+        }
+    })
+
+    test('changing the gap rule re-indexes a cached crate', () => {
+        // Same class as the chunker fingerprint above. The supplement SET is
+        // hashed, but the rule that decides which of a supplement's chunks are
+        // kept was not — so a fix to `cargoExportGap` left every cached facade
+        // holding the chunks the old rule chose.
+        const cache = openCache(':memory:')
+        try {
+            expect(ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()]).hitCache).toBe(false)
+            expect(ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()]).hitCache).toBe(true)
+            const widened = {
+                ...ECOSYSTEMS.cargo,
+                contentFingerprint: () => `${ECOSYSTEMS.cargo.contentFingerprint()} widened`
+            }
+            expect(ensureIndexed(cache, facade(), widened, [core()]).hitCache).toBe(false)
+        } finally {
+            cache.close()
+        }
+    })
+
+    test('the folded declaration says which crate it came from', () => {
+        const cache = openCache(':memory:')
+        try {
+            ensureIndexed(cache, facade(), ECOSYSTEMS.cargo, [core()])
+            const row = cache.db
+                .prepare(
+                    "SELECT file_path FROM chunks WHERE name = 'tiny-axum' AND content LIKE '%trait IntoResponse%'"
+                )
+                .get() as {file_path: string} | null
+            expect(row?.file_path).toContain('tiny-axum-core-0.1.0/')
         } finally {
             cache.close()
         }

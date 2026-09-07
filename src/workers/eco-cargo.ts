@@ -15,6 +15,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import {ResolveError, type ResolvedPackage} from './docs-resolve.js'
 import type {NpmVersionInfo} from './npm-version.js'
+import type {ExportGap} from './export-gap.js'
 
 /** crates.io rejects a request with no User-Agent naming the caller. */
 const CRATES_UA = 'pi-task (github.com/mjasnikovs/pi-task)'
@@ -676,6 +677,36 @@ const LIST_KINDS = new Set(['use'])
  * Inside a `trait` every member is public by definition, so the `pub` test is
  * suspended there; anywhere else a bare or `pub(crate)` item is dropped.
  */
+/** A `#name` interpolation. Rust item syntax has none; a `quote!` template is
+ *  nothing but. Comments come out first — a doctest hides lines with `# use …`. */
+const INTERPOLATION = /#[A-Za-z_(]/
+function withoutComments(body: string): string {
+    return body
+        .split('\n')
+        .map(l => (/^\s*(?:\/\/|\*)/.test(l) ? '' : l.replace(/\/\/.*$/, '')))
+        .join('\n')
+}
+
+/**
+ * The body of a `name! { … }` block that WRAPS items, or null.
+ *
+ * tokio declares `pub struct TcpListener` inside `cfg_net! { … }`, and every
+ * async crate does the same: 818 public items across twenty-two crates sit inside
+ * such a block, 441 of them tokio's. Treating the invocation as one opaque item
+ * dropped all of them, `TcpListener` — a ground-truth symbol of the live test —
+ * included.
+ *
+ * The guard is what the body IS, never which macro it is. A `quote!` body is a
+ * token template, and the same measurement found zero public items inside an
+ * interpolating body, so the two populations do not overlap.
+ */
+function macroWrappedItems(item: {head: string; body: string | null}): string | null {
+    if (item.body === null) return null
+    if (!/^[a-z_][a-z0-9_]*!$/.test(item.head.trim())) return null
+    if (INTERPOLATION.test(withoutComments(item.body))) return null
+    return item.body
+}
+
 export function rustSurface(src: string, insideTrait = false, topLevel = true): string {
     const out: string[] = []
     const items = splitRustItems(src)
@@ -689,7 +720,11 @@ export function rustSurface(src: string, insideTrait = false, topLevel = true): 
     if (topLevel && moduleDoc) out.push(moduleDoc)
     for (const item of items) {
         const headMatch = ITEM_HEAD_RE.exec(item.head)
-        if (!headMatch) continue
+        if (!headMatch) {
+            const wrapped = macroWrappedItems(item)
+            if (wrapped !== null) out.push(rustSurface(wrapped, insideTrait, false))
+            continue
+        }
         const kind = headMatch[1]
         // A `#[macro_export]` macro IS the crate's API — `anyhow::bail!`,
         // `serde_json::json!`. Dropping every macro answered "no such thing"
@@ -882,4 +917,237 @@ export function manifestCrates(cwd: string): Set<string> | undefined {
         if (key) add(key[1])
     }
     return out
+}
+
+// ── the facade gap (DEFECT-12-STOPPING-RULE.md, cargo half) ─────────────────
+
+/** A `pub use …;` statement, attributes and line breaks included. */
+const PUB_USE_RE = /\bpub\s+use\s+([^;]+);/g
+/** Every item head that introduces a name, visibility ignored — a facade may
+ *  re-export something its own private module declares. */
+const RUST_DECL_RE =
+    /\b(?:fn|struct|enum|union|trait|type|const|static|mod)\s+([A-Za-z_][A-Za-z0-9_]*)|macro_rules!\s*([A-Za-z_][A-Za-z0-9_]*)/g
+/** Path roots that name this crate, never a dependency. */
+const OWN_PATH_ROOTS = new Set(['crate', 'self', 'super'])
+
+/** Read `[dependencies]` only. Dev- and build-dependencies were measured and
+ *  fetch `tokio-test`, `regex-test` and `tower-test` for zero extra names. */
+function runtimeDeps(root: string): Set<string> {
+    const text = safeRead(path.join(root, 'Cargo.toml'))
+    const out = new Set<string>()
+    if (text === null) return out
+    let inDeps = false
+    for (const raw of text.split('\n')) {
+        const line = raw.trim()
+        const header = /^\[([^\]]+)\]$/.exec(line)
+        if (header) {
+            const table = /^(?:target\.[^.]*\.)?dependencies(?:\.(.+))?$/.exec(header[1])
+            inDeps = table !== null && table[1] === undefined
+            if (table?.[1]) out.add(canonical(table[1]))
+            continue
+        }
+        if (!inDeps) continue
+        const key = /^([A-Za-z0-9_-]+)\s*=/.exec(line)
+        if (key) out.add(canonical(key[1]))
+    }
+    return out
+}
+
+/** Every leaf name a use-path brings in, and every module it globs. */
+function useTargets(body: string): {names: string[]; globs: string[]} {
+    // Whitespace is normalised, never removed: `Inner as Outer` collapsed to
+    // `InnerasOuter` is unrecoverable, and splitting a leaf on a bare "as" turns
+    // `Hasher` into `H`.
+    const flat = body
+        .replace(/#\[[^\]]*\]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    const names: string[] = []
+    const globs: string[] = []
+    const expand = (prefix: string, rest: string): void => {
+        const brace = rest.indexOf('{')
+        if (brace === -1) {
+            const full = prefix + rest
+            if (full.endsWith('*')) globs.push(full.replace(/::\*$/, ''))
+            else {
+                // The SOURCE name of a rename is the hole: the supplier declares
+                // `Inner`, whatever the facade calls it.
+                const leaf = full
+                    .split('::')
+                    .pop()
+                    ?.split(/\s+as\s+/)[0]
+                    .trim()
+                if (leaf) names.push(leaf)
+            }
+            return
+        }
+        const head = prefix + rest.slice(0, brace)
+        let depth = 0
+        let start = brace + 1
+        for (let i = brace; i < rest.length; i++) {
+            const c = rest[i]
+            if (c === '{') depth++
+            else if (c === '}') {
+                depth--
+                if (depth === 0) return expand(head, rest.slice(start, i))
+            } else if (c === ',' && depth === 1) {
+                expand(head, rest.slice(start, i))
+                start = i + 1
+            }
+        }
+    }
+    expand('', flat)
+    return {names, globs}
+}
+
+function rustSources(root: string): string[] {
+    const out: string[] = []
+    const walk = (dir: string): void => {
+        let entries: fs.Dirent[]
+        try {
+            entries = fs.readdirSync(dir, {withFileTypes: true})
+        } catch {
+            return
+        }
+        for (const e of entries) {
+            if (e.isDirectory()) {
+                if (!CARGO_SKIP_DIRS.includes(e.name)) walk(path.join(dir, e.name))
+            } else if (isRustFile(e.name)) out.push(path.join(dir, e.name))
+        }
+    }
+    walk(root)
+    return out
+}
+const CARGO_SKIP_DIRS = ['tests', 'benches', 'examples', 'target', '.git']
+
+/** `axum-core-0.5.6/src/response/mod.rs` -> `response`, the module path a
+ *  `pub use axum_core::response::*` names. `lib.rs` and `mod.rs` are the module
+ *  they sit in, not a module of their own. */
+function moduleOfPath(relPath: string): string {
+    const parts = relPath.replace(/\\/g, '/').split('/')
+    const src = parts.indexOf('src')
+    const tail = (src === -1 ? parts : parts.slice(src + 1)).join('/').replace(/\.rs$/, '')
+    return tail
+        .split('/')
+        .filter(seg => seg !== 'mod' && seg !== 'lib')
+        .join('::')
+}
+
+/**
+ * The names this crate publishes through a dependency and declares nowhere.
+ *
+ * The trigger is the hole, with no threshold — measured, and for the same reason
+ * as hackage: across twenty-two crates the unresolved fraction reads 100% on a
+ * crate with one re-export and 0% on a crate with none, so a ratio separates
+ * nothing. See "Defect 16" in DOC_REGRESSINONS.md for the sweep.
+ */
+export function cargoExportGap(root: string): ExportGap {
+    const deps = runtimeDeps(root)
+    const declared = new Set<string>()
+    const reexported = new Set<string>()
+    const globModules = new Set<string>()
+    for (const file of rustSources(root)) {
+        const src = safeRead(file)
+        if (src === null) continue
+        for (const m of src.matchAll(RUST_DECL_RE)) declared.add((m[1] ?? m[2]) as string)
+        for (const m of src.matchAll(PUB_USE_RE)) {
+            const rootSeg = m[1]
+                .replace(/#\[[^\]]*\]/g, '')
+                .trim()
+                .split(/::|\{/)[0]
+                .trim()
+            if (rootSeg === '' || OWN_PATH_ROOTS.has(rootSeg) || !deps.has(canonical(rootSeg)))
+                continue
+            const {names, globs} = useTargets(m[1])
+            for (const n of names) if (/^[A-Za-z_]/.test(n)) reexported.add(n)
+            // Drop the leading crate segment: the supplier's own paths start below it.
+            for (const g of globs) globModules.add(g.split('::').slice(1).join('::'))
+        }
+    }
+    const unresolved = new Set([...reexported].filter(n => !declared.has(n)))
+    return {
+        empty: unresolved.size === 0 && globModules.size === 0,
+        wholesale: relPath => globModules.has(moduleOfPath(relPath)),
+        fillsHole: chunk => {
+            for (const m of chunk.matchAll(RUST_DECL_RE)) {
+                if (unresolved.has((m[1] ?? m[2]) as string)) return true
+            }
+            return false
+        }
+    }
+}
+
+/**
+ * Source of everything this row contributes to a chunk's CONTENT — the surface
+ * extractor, the gap rule, and every function and regex they delegate to.
+ *
+ * `String(fn)` covers only a top level, and three separate bugs have now hidden
+ * one level below it: the chunker (which `chunkerFingerprint` closes), the gap
+ * rule's helpers, and `surface` itself, declared as the wrapper
+ * `content => rustSurface(content)` which shows none of `rustSurface`. A fix that
+ * does not move this leaves every cached crate holding the chunks the old rule
+ * chose.
+ */
+export function cargoContentFingerprint(): string {
+    return [
+        rustSurface,
+        splitRustItems,
+        macroWrappedItems,
+        withoutComments,
+        keptPreamble,
+        privateTypeNames,
+        implTarget,
+        fieldsOf,
+        cargoExportGap,
+        runtimeDeps,
+        useTargets,
+        rustSources,
+        moduleOfPath
+    ]
+        .map(String)
+        .concat([
+            PUB_USE_RE.source,
+            RUST_DECL_RE.source,
+            ITEM_HEAD_RE.source,
+            INTERPOLATION.source,
+            CARGO_SKIP_DIRS.join(','),
+            [...OWN_PATH_ROOTS].join(',')
+        ])
+        .join('\u0000')
+}
+
+/**
+ * Which declared dependencies may be opened to fill the gap.
+ *
+ * Cargo splits a facade from its implementation by name the way hackage does —
+ * `axum`/`axum-core`, `futures`/`futures-util`, `tracing`/`tracing-core` — and
+ * writes that name with either separator, so both spellings are one candidate.
+ *
+ * The bound's cost is stated rather than hidden: `hyper` re-exports twelve names
+ * from `http`, `bytes` and `http-body`, and axum's own `Bytes` comes from `bytes`.
+ * No prefix rule can see any of them.
+ */
+export function cargoSupplementCandidates(
+    pkgName: string,
+    declaredDeps: ReadonlySet<string>,
+    resolved: Readonly<Record<string, string>>
+): Array<{name: string; version: string}> {
+    const out: Array<{name: string; version: string}> = []
+    const seen = new Set<string>()
+    for (const dep of declaredDeps) {
+        if (canonical(dep) === canonical(pkgName)) continue
+        if (!canonical(dep).startsWith(`${canonical(pkgName)}_`)) continue
+        const version = resolved[dep]
+        if (!version || seen.has(canonical(dep))) continue
+        seen.add(canonical(dep))
+        out.push({name: dep, version})
+    }
+    // Code-unit order, not `localeCompare`: the sort decides the order supplement
+    // chunks enter the index, and a locale-aware compare puts `-` and `_` in
+    // different places under a different LANG.
+    return out.sort((a, b) =>
+        a.name < b.name ? -1
+        : a.name > b.name ? 1
+        : 0
+    )
 }

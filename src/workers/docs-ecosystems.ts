@@ -42,6 +42,9 @@ import {
     childDirs,
     lockedDeps,
     manifestCrates,
+    cargoExportGap,
+    cargoContentFingerprint,
+    cargoSupplementCandidates,
     CARGO_DECL_SPLIT_RE
 } from './eco-cargo.js'
 import {
@@ -52,6 +55,8 @@ import {
     hackageExtractDir,
     hackageProjectName,
     supplementCandidates,
+    hackageExportGap,
+    hackageContentFingerprint,
     findCabalTarball,
     cachedVersions,
     resolvedVersions,
@@ -63,6 +68,7 @@ import {
     HACKAGE_SKIP_DIRS
 } from './eco-hackage.js'
 import {runChild, type SpawnFn} from '../shared/child-process.js'
+import type {ExportGap} from './export-gap.js'
 
 export type EcosystemId = 'npm' | 'cargo' | 'hackage'
 
@@ -192,10 +198,26 @@ export interface EcosystemProfile {
     ) => Promise<{pkg: ResolvedPackage; installed: boolean; pin?: AutoInstallPin}>
     /**
      * Packages whose declarations belong in THIS package's index, because this
-     * package exports names it does not declare. Only hackage has facades of the
-     * `hspec`/`hspec-core` shape; see DEFECT-12-STOPPING-RULE.md.
+     * package exports names it does not declare — `hspec`/`hspec-core`,
+     * `axum`/`axum-core`; see DEFECT-12-STOPPING-RULE.md.
      */
     supplements?: (pkg: ResolvedPackage, cwd: string, io: EcosystemIo) => Promise<ResolvedPackage[]>
+    /**
+     * What this package publishes and declares nowhere, in this ecosystem's own
+     * syntax. Read only when `supplements` returned something, and it decides
+     * which of a supplement's chunks are kept.
+     */
+    exportGap?: (root: string) => ExportGap
+    /**
+     * Source of everything this row contributes to a chunk's CONTENT — `surface`,
+     * `exportGap`, and every function and regex they delegate to.
+     *
+     * Required, and not derived from `String(surface)`, because that has hidden a
+     * real fix three times: `surface` here is the wrapper
+     * `content => rustSurface(content)`, which shows none of `rustSurface`, and
+     * neither gap rule's helpers appear in its entry point either.
+     */
+    contentFingerprint: () => string
     /** The registry's own newest version, for grounding an answer in the present. */
     latest: (name: string, io: EcosystemIo) => Promise<NpmVersionInfo | null>
 
@@ -259,6 +281,10 @@ export interface NpmProfileHooks {
  * hooks, and those hooks must keep reaching the resolution they are injected
  * for. A per-call row carries them; {@link ECOSYSTEMS} holds the plain one.
  */
+/** A `.d.ts` is already declarations only, so npm's extractor is the identity.
+ *  Named rather than inline so `contentFingerprint` can point at it. */
+const npmSurface = (content: string): string => content
+
 export function npmProfile(hooks: NpmProfileHooks = {}): EcosystemProfile {
     const resolve = hooks.resolvePackage ?? resolvePackage
     const versionLookup = hooks.npmVersionLookup ?? npmVersionLookup
@@ -291,7 +317,10 @@ export function npmProfile(hooks: NpmProfileHooks = {}): EcosystemProfile {
             versionLookup(name, io.signal === undefined ? {} : {signal: io.signal}),
 
         isSurfaceFile: isDtsFile,
-        surface: content => content,
+        surface: npmSurface,
+        // No gap rule, and a `.d.ts` IS the surface, so there is nothing below the
+        // identity for a fingerprint to miss.
+        contentFingerprint: () => String(npmSurface),
         declSplitRe: DECL_SPLIT_RE,
         typeKeywords: ['interface', 'type', 'class', 'enum'],
         commentPrefix: '//',
@@ -455,9 +484,45 @@ const cargoProfile: EcosystemProfile = {
         }
         return acquireCrate(info?.pkg ?? name, version, io)
     },
+    supplements: async (pkg, cwd, io) => {
+        const deps = manifestCrates(pkg.root)
+        if (!deps) return []
+        // The PROJECT's lock, never the crate's own root. `findLock` walks upward,
+        // and a crate unpacked under `~/.cargo/registry` sits below whatever lock
+        // happens to be above it — which resolved a version this project never
+        // pinned, making the index a function of the machine.
+        const candidates = cargoSupplementCandidates(pkg.name, deps, lockedDeps(cwd) ?? {})
+        const out: ResolvedPackage[] = []
+        for (const c of candidates) {
+            try {
+                out.push(
+                    resolveCrate(c.name, cwd, {cargoHome: io.cargoHome, modulesDir: io.modulesDir})
+                )
+                continue
+            } catch {
+                // Not unpacked here. `acquire` reads crates.io for the published
+                // spelling, so `tokio-util` and `tokio_util` both land.
+            }
+            const got = await cargoProfile.acquire(c.name, c.version, io)
+            if (!got.success) continue
+            try {
+                out.push(
+                    resolveCrate(c.name, cwd, {cargoHome: io.cargoHome, modulesDir: io.modulesDir})
+                )
+            } catch {
+                // A supplement that will not resolve leaves the facade as it was.
+            }
+        }
+        return out
+    },
+    exportGap: cargoExportGap,
+    contentFingerprint: cargoContentFingerprint,
     latest: (name, io) => cratesLatest(name, io.fetch, io.signal),
 
     isSurfaceFile: isRustFile,
+    // Wrapped, not passed by reference: `rustSurface` takes two more optional
+    // arguments, and a bare reference would let a `.map(profile.surface)` pass an
+    // index as `insideTrait`. `contentFingerprint` is what covers its source.
     surface: content => rustSurface(content),
     declSplitRe: CARGO_DECL_SPLIT_RE,
     typeKeywords: ['struct', 'trait', 'enum', 'type', 'union'],
@@ -584,6 +649,8 @@ const hackageProfile: EcosystemProfile = {
         }
         return out
     },
+    exportGap: hackageExportGap,
+    contentFingerprint: hackageContentFingerprint,
     latest: (name, io) => hackageLatest(name, io.fetch, io.signal),
 
     isSurfaceFile: isHaskellFile,
