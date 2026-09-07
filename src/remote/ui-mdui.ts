@@ -508,7 +508,7 @@ mdui-collapse.thinking {
     transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.thinking[value] { border-radius: 1.125rem; }
+mdui-collapse.thinking.open { border-radius: 1.125rem; }
 .thinking .thinking-header {
     display: flex; align-items: center;
     cursor: pointer;
@@ -523,7 +523,7 @@ mdui-collapse.thinking[value] { border-radius: 1.125rem; }
     border-radius: var(--mdui-shape-corner-medium);
     transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.thinking[value] .thinking-header { border-radius: 1.125rem; }
+mdui-collapse.thinking.open .thinking-header { border-radius: 1.125rem; }
 /* Pure-CSS chevron. An L of side s and stroke t has its centroid
    0.25*(s-t) toward the corner, so the shape is pulled back by that
    amount in its own frame before rotating - the visual mass, not the
@@ -570,7 +570,7 @@ mdui-collapse.tool-call {
     transition: border-radius 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
     transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.tool-call[value] { border-radius: 1.125rem; }
+mdui-collapse.tool-call.open { border-radius: 1.125rem; }
 mdui-collapse.tool-call.error {
     background: color-mix(in srgb, rgb(var(--mdui-color-error-container)) 35%, rgb(var(--mdui-color-surface-container)));
 }
@@ -587,7 +587,7 @@ mdui-collapse.tool-call.error {
     border-radius: var(--mdui-shape-corner-medium);
     transition: border-radius 350ms var(--m3e-spring-fast);
 }
-mdui-collapse.tool-call[value] .tool-header { border-radius: 1.125rem; }
+mdui-collapse.tool-call.open .tool-header { border-radius: 1.125rem; }
 .tool-call .tool-header {
     --_chev-shift: calc((0.4rem - 1.5px) / -4);
 }
@@ -1694,7 +1694,12 @@ function stage0Logic(wsUrl: string): string {
       if (currentThinking) {
         /* Streaming stays expanded so you can watch it think; on completion
            the block folds back up unless the user turned that off. */
-        if (thinkingAutoCollapse()) currentThinking.value = '';
+        if (thinkingAutoCollapse()) {
+          currentThinking.value = '';
+          // An open->close inside one Lit update cycle fires no 'close'
+          // event, which would strand the .open class (chevron + shape).
+          currentThinking.classList.remove('open');
+        }
         currentThinking = null; thinkingText = '';
         stopSpinIfIdle();
       } else {
@@ -1890,7 +1895,10 @@ function stage0Logic(wsUrl: string): string {
       localStorage.setItem(THINKING_COLLAPSE_KEY, thinkingCollapse.checked ? '1' : '0');
       if (thinkingCollapse.checked) {
         // Fold the blocks that are already sitting expanded on the page.
-        document.querySelectorAll('mdui-collapse.thinking.open').forEach((c) => { c.value = ''; });
+        document.querySelectorAll('mdui-collapse.thinking.open').forEach((c) => {
+          c.value = '';
+          c.classList.remove('open');
+        });
       }
       showToast(thinkingCollapse.checked ? 'Thinking 将在结束时收起' : 'Thinking 保持展开', 'info');
     });
