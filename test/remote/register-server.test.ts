@@ -16,6 +16,7 @@ import * as realTailscale from '../../src/remote/tailscale.js'
 import type {ServerHandle} from '../../src/remote/server.js'
 import type {ServeResult} from '../../src/remote/tailscale.js'
 import {getBridge} from '../../src/remote/bridge.js'
+import {broadcast as realBroadcast} from '../../src/remote/broadcast.js'
 import {getConfig} from '../../src/config/config.js'
 
 interface StartArgs {
@@ -23,6 +24,8 @@ interface StartArgs {
     getHtml: (wsUrl: string) => string
     onInterrupt?: () => void
     onClearHeld?: () => void
+    onSetModel?: (spec: string) => void
+    getModels?: () => unknown
 }
 
 const started: StartArgs[] = []
@@ -50,9 +53,11 @@ void mock.module('../../src/remote/server.js', () => ({
         onMessage: StartArgs['onMessage'],
         getHtml: StartArgs['getHtml'],
         onInterrupt?: () => void,
-        onClearHeld?: () => void
+        onClearHeld?: () => void,
+        onSetModel?: StartArgs['onSetModel'],
+        getModels?: StartArgs['getModels']
     ) => {
-        started.push({onMessage, getHtml, onInterrupt, onClearHeld})
+        started.push({onMessage, getHtml, onInterrupt, onClearHeld, onSetModel, getModels})
         if (startFails) throw startFails
         return handle
     }
@@ -133,11 +138,15 @@ function commandCtx(mode: string): {
     }
 }
 
-const remoteGlobal = (): {server: ServerHandle | null; serveResult: ServeResult | null} =>
+const remoteGlobal = (): {
+    server: ServerHandle | null
+    serveResult: ServeResult | null
+    pi: unknown
+} =>
     (
         globalThis as unknown as Record<
             string,
-            {server: ServerHandle | null; serveResult: ServeResult | null}
+            {server: ServerHandle | null; serveResult: ServeResult | null; pi: unknown}
         >
     ).__piRemote!
 
@@ -152,6 +161,7 @@ beforeEach(() => {
     handle = makeHandle()
     remoteGlobal().server = null
     remoteGlobal().serveResult = null
+    remoteGlobal().pi = null
     const b = getBridge()
     b.sent.length = 0
     b.commands.clear()
@@ -401,4 +411,73 @@ test('a browser /new goes through the new-session dispatcher, not the agent', as
     started[0].onMessage('hello from the phone')
     await Bun.sleep(0)
     expect(sends).toEqual(['hello from the phone'])
+})
+
+// The model-switch callback is the one place a captured `pi` leaks into
+// message-time code. pi invalidates the ExtensionAPI on EVERY session
+// replacement and reload (each rebuilds the runner and re-registers this
+// extension), and a call on a stale one throws SYNCHRONOUSLY — which used to
+// escape the ws handler and kill pi via uncaughtException.
+test('set_model on a stale pi degrades to an error toast instead of crashing pi', async () => {
+    getConfig().remote = true
+    const {pi, on} = fakePi()
+    registerRemote(pi)
+    on.get('session_start')!({} as never, eventCtx().ctx as never)
+    await Bun.sleep(5)
+    const switchModel = started[0]!.onSetModel!
+    expect(switchModel).toBeTypeOf('function')
+
+    // This generation's pi went stale: every call asserts and throws.
+    ;(pi as unknown as {setModel: () => never}).setModel = (): never => {
+        throw new Error('This extension ctx is stale after session replacement or reload.')
+    }
+
+    // The registry must resolve the spec, so the failure lands on setModel.
+    const b = getBridge()
+    b.broadcast = msg => b.sent.push(msg)
+    b.currentCtx = {
+        modelRegistry: {
+            find: () => ({provider: 'p', id: 'a', name: 'A', contextWindow: 8, reasoning: false})
+        }
+    } as never
+
+    expect(() => switchModel('p/a')).not.toThrow()
+    await Bun.sleep(0)
+    expect(b.sent.at(-1)).toMatchObject({type: 'notify', level: 'error'})
+    b.broadcast = msg => realBroadcast(msg)
+})
+
+test('set_model switches on the newest registered pi, not the one the server captured', async () => {
+    getConfig().remote = true
+    const first = fakePi()
+    registerRemote(first.pi)
+    first.on.get('session_start')!({} as never, eventCtx().ctx as never)
+    await Bun.sleep(5)
+    const switchModel = started[0]!.onSetModel!
+
+    // A reload / session replacement re-registers the extension with a live API.
+    const second = fakePi()
+    let calls = 0
+    ;(second.pi as unknown as {setModel: () => Promise<boolean>}).setModel = async () => {
+        calls++
+        return true
+    }
+    registerRemote(second.pi)
+    second.on.get('session_start')!({} as never, eventCtx().ctx as never)
+    await Bun.sleep(5)
+    expect(started.length).toBe(1) // the server persists; only the API is re-seeded
+
+    const b = getBridge()
+    b.broadcast = msg => b.sent.push(msg)
+    b.currentCtx = {
+        modelRegistry: {
+            find: () => ({provider: 'p', id: 'a', name: 'A', contextWindow: 8, reasoning: false})
+        }
+    } as never
+
+    switchModel('p/a')
+    await Bun.sleep(0)
+    expect(calls).toBe(1)
+    expect(b.sent.at(-1)).toMatchObject({type: 'notify', level: 'info', message: 'Model: A'})
+    b.broadcast = msg => realBroadcast(msg)
 })

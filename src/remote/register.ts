@@ -43,9 +43,18 @@ type Shared = {
     server: ServerHandle | null
     send: ((text: string, opts?: {deliverAs: 'steer' | 'followUp'}) => void) | null
     serveResult: ServeResult | null
+    /**
+     * The newest ExtensionAPI. The server outlives every registration (globalThis
+     * S.server survives reloads and session replacements, each of which rebuilds
+     * the runner and calls registerRemote again), so the `pi` captured by the
+     * FIRST ensureServer call is stale after any of them — pi invalidates it and
+     * every call on it throws. Message-time code must read the current
+     * generation's API from here instead.
+     */
+    pi: ExtensionAPI | null
 }
 const _g = globalThis as unknown as Record<string, Shared | undefined>
-if (!_g.__piRemote) _g.__piRemote = {server: null, send: null, serveResult: null}
+if (!_g.__piRemote) _g.__piRemote = {server: null, send: null, serveResult: null, pi: null}
 
 const S = _g.__piRemote!
 
@@ -80,6 +89,10 @@ export function routePlainLine(
 }
 
 export function registerRemote(pi: ExtensionAPI): void {
+    // This generation's API. Every session replacement (newSession/fork/
+    // switchSession) and every reload rebuilds the extension runner and lands
+    // here with a live pi; the one the server's closures captured is dead.
+    S.pi = pi
     // The browser's model picker: every authed model in the registry (never
     // getAll() — an unauthed one cannot answer, same rule as liveCatalog), plus
     // the session's current as a canonical spec so the menu can tick a row.
@@ -133,7 +146,11 @@ export function registerRemote(pi: ExtensionAPI): void {
             clearHeldInput,
             // Remote-initiated model switch. pi.setModel persists the choice
             // session-globally and re-clamps thinking; a rejected handle must
-            // not silently no-op, so each outcome announces itself.
+            // not silently no-op, so each outcome announces itself. The API is
+            // read at message time — a captured one is stale after any session
+            // replacement — and a stale one THROWS SYNCHRONOUSLY, so the try
+            // wraps the call itself: the promise .catch only covers async
+            // failures, and an uncaught sync throw here kills pi outright.
             spec => {
                 const ctx = getBridge().currentCtx
                 const resolved = ctx ? resolveModel(ctx, spec) : undefined
@@ -141,19 +158,23 @@ export function registerRemote(pi: ExtensionAPI): void {
                     publishNotify(`Unknown model: ${spec}`, 'warning')
                     return
                 }
-                void pi
-                    .setModel(resolved.handle)
-                    .then(ok => {
-                        if (!ok) {
-                            publishNotify(`Model switch to ${resolved.name} failed`, 'error')
-                            return
-                        }
-                        publishNotify(`Model: ${resolved.name}`, 'info')
-                        broadcastModels()
-                    })
-                    .catch(err =>
-                        publishNotify(`Model switch failed: ${(err as Error).message}`, 'error')
-                    )
+                try {
+                    void (S.pi ?? pi)
+                        .setModel(resolved.handle)
+                        .then(ok => {
+                            if (!ok) {
+                                publishNotify(`Model switch to ${resolved.name} failed`, 'error')
+                                return
+                            }
+                            publishNotify(`Model: ${resolved.name}`, 'info')
+                            broadcastModels()
+                        })
+                        .catch(err =>
+                            publishNotify(`Model switch failed: ${(err as Error).message}`, 'error')
+                        )
+                } catch (err) {
+                    publishNotify(`Model switch failed: ${(err as Error).message}`, 'error')
+                }
             },
             collectModels
         )
