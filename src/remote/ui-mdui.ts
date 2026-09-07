@@ -427,6 +427,15 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
        stays code-driven. */
     --_code-r: calc(1rem + var(--mdui-shape-corner-extra-small));
     border-radius: calc(var(--_code-r) + 0.75rem);
+    /* Single-line content turns the bubble into a capsule of its big
+       corner radius: total height = 2 × radius. min-height is content-box
+       (no global border-box here), so it carries the padding subtraction:
+       2×(code-r + pad) − 2×pad = 2×code-r. The single-line code block
+       (40px) lands exactly on it too. align-content centers short content
+       in the extra space; taller content overflows the min-height and
+       centering is a no-op. */
+    min-height: calc(2 * var(--_code-r));
+    align-content: center;
     background: rgb(var(--mdui-color-surface-container-high));
     color: rgb(var(--mdui-color-on-surface));
     line-height: 1.55;
@@ -509,6 +518,7 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     position: relative;
     font-family: var(--font-mono);
     --_pill-inset: var(--mdui-shape-corner-extra-small);
+    --_code-line: 1.25rem;
     background: rgb(var(--mdui-color-surface-container-lowest));
     /* Same radius the bubble's concentric formula consumes (--_code-r is
        defined on .bubble and inherits here). */
@@ -516,12 +526,14 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     overflow: hidden;
     margin: 0.6em 0;
     font-size: 0.9em;
-    /* The container owns the inner inset: the nested pre is a bare surface
-       (margin 0, radius 0) clipped by this box, so the dark rect the bubble's
-       corners buffer around is exactly this border edge. Same 0.75em/1em
-       recipe as the headless pre, scaled to this block's 0.9em font. */
-    padding: 0.75em 1em;
-    line-height: 1.4;
+    /* Capsule recipe: one code line plus two of these paddings is exactly
+       2 × --_code-r, so a single-line block IS a capsule (height = 2 ×
+       radius) — and the floating pill (top: --_pill-inset, height 2rem)
+       lands at its exact vertical center with concentric arcs, since
+       2×(1rem + inset) − 2rem = 2×inset leaves inset as the half-space per
+       side. Multi-line blocks grow in whole --_code-line steps past it. */
+    padding: calc((2 * var(--_code-r) - var(--_code-line)) / 2) 1em;
+    line-height: var(--_code-line);
 }
 .bubble .code-head {
     position: absolute;
@@ -569,24 +581,31 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
 .bubble .code-block pre {
     margin: 0;
     border-radius: 0;
+    /* The shrink lives on the pre, not the inner code: strut and inline
+       box then share one font size, so each line box is exactly
+       --_code-line and the capsule height stays exact. */
+    font-size: 0.85em;
 }
 /* Direct child only — a pre inside .code-block keeps its own zero-radius
    rule above and lets the container's clipping own the shape. */
 .bubble.md > pre {
     font-family: var(--font-mono);
+    font-size: 0.85em;
     background: rgb(var(--mdui-color-surface-container-lowest));
     color: rgb(var(--mdui-color-on-surface));
-    padding: 0.75em 1em;
+    /* Same capsule recipe as .code-block: line + 2 paddings = 2 × radius. */
+    --_code-line: 1.25rem;
+    padding: calc((2 * var(--_code-r) - var(--_code-line)) / 2) 1em;
     /* Headless code blocks share the .code-block radius so the bubble's
        concentric corner math covers both kinds. */
     border-radius: var(--_code-r);
     overflow-x: auto;
     margin: 0.6em 0;
-    line-height: 1.4;
+    line-height: var(--_code-line);
 }
 .bubble.md pre code {
     background: transparent; padding: 0;
-    font-size: 0.85em;
+    font-size: inherit;
 }
 .bubble.md table {
     border-collapse: collapse;
