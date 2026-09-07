@@ -576,7 +576,11 @@ mdui-collapse.thinking {
     display: block;
     max-width: var(--chat-max-width);
     width: 100%;
-    margin: 0.3rem auto;
+    /* Vertical spacing comes from #chat-log's flex gap alone — every block
+       (bubbles, cards, timestamps) then sits the same distance apart no
+       matter the neighbour. Extra margins would stack onto the gap and make
+       card-adjacent pairs visibly wider than bubble-to-bubble. */
+    margin: 0 auto;
     border-radius: var(--mdui-shape-corner-medium);
     /* A whisper of secondary tint marks "model reasoning" apart from the
        neutral tool-call cards it sits between — expressive, but the body
@@ -644,7 +648,8 @@ mdui-collapse.tool-call {
     display: block;
     max-width: var(--chat-max-width);
     width: 100%;
-    margin: 0.3rem auto;
+    /* Same rule as .thinking: #chat-log's flex gap owns the vertical rhythm. */
+    margin: 0 auto;
     border-radius: var(--mdui-shape-corner-medium);
     background: rgb(var(--mdui-color-surface-container));
     overflow: hidden;
@@ -1044,7 +1049,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
 /* Turn-time divider */
 .turn-time {
     max-width: var(--chat-max-width);
-    width: 100%; margin: 0.4rem auto;
+    width: 100%; margin: 0 auto;
     text-align: center;
     font-size: 0.7rem;
     color: rgb(var(--mdui-color-on-surface-variant));
@@ -1058,7 +1063,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
 /* System note (centered, muted) */
 .sysnote {
     max-width: var(--chat-max-width);
-    width: 100%; margin: 0.4rem auto;
+    width: 100%; margin: 0 auto;
     text-align: center;
     font-size: 0.78rem;
     color: rgb(var(--mdui-color-on-surface-variant));
