@@ -65,6 +65,13 @@ export class HistoryBuffer {
         this._push({role: 'system', text})
     }
 
+    /** Seed the buffer from the persisted session (restart backfill). Original
+     *  turn timestamps are preserved so the client's dim HH:MM is honest; only
+     *  the newest `limit` turns survive, matching the live buffer's window. */
+    addSeeded(turns: Turn[]): void {
+        this.entries = turns.slice(-this.limit)
+    }
+
     getEntries(): Turn[] {
         return [...this.entries]
     }

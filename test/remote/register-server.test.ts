@@ -17,6 +17,7 @@ import type {ServerHandle} from '../../src/remote/server.js'
 import type {ServeResult} from '../../src/remote/tailscale.js'
 import {getBridge} from '../../src/remote/bridge.js'
 import {broadcast as realBroadcast} from '../../src/remote/broadcast.js'
+import {_setSink, getState} from '../../src/remote/session-state.js'
 import {getConfig} from '../../src/config/config.js'
 
 interface StartArgs {
@@ -480,4 +481,38 @@ test('set_model switches on the newest registered pi, not the one the server cap
     expect(calls).toBe(1)
     expect(b.sent.at(-1)).toMatchObject({type: 'notify', level: 'info', message: 'Model: A'})
     b.broadcast = msg => realBroadcast(msg)
+})
+
+// The wiring, not the reconstruction (backfill.test.ts owns that): the ctx the
+// session_start handler receives must actually reach the seeder.
+test('session_start backfills the transcript from the persisted session', () => {
+    getConfig().remote = true
+    const {pi, on} = fakePi()
+    registerRemote(pi)
+    const seeded: unknown[] = []
+    _setSink(m => seeded.push(m))
+    on.get('session_start')!(
+        {} as never,
+        {
+            isIdle: () => true,
+            ui: {notify: () => {}},
+            sessionManager: {
+                getEntries: () => [
+                    {
+                        type: 'message',
+                        timestamp: '2026-09-07T10:00:00Z',
+                        message: {role: 'user', content: 'persisted hello'}
+                    }
+                ]
+            }
+        } as never
+    )
+    expect(getState().history.getEntries()[0]).toMatchObject({
+        role: 'user',
+        text: 'persisted hello'
+    })
+    // reset() fired the clearing frame first; the re-sent snapshot must be the
+    // LAST frame, so a browser applies the seeded view, not the empty one.
+    expect((seeded.at(-1) as {type: string}).type).toBe('snapshot')
+    _setSink(m => realBroadcast(m))
 })

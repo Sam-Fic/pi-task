@@ -13,6 +13,7 @@ import {
     notifyBoth
 } from './bridge.js'
 import {setupEvents} from './events.js'
+import {seedFromSession} from './backfill.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
 import {resolveModel, specOf} from '../shared/model-resolve.js'
@@ -193,6 +194,11 @@ export function registerRemote(pi: ExtensionAPI): void {
         // state and tell connected clients to clear.
         const bridge = getBridge()
         reset()
+        // Rebuild the transcript from the persisted session so a browser that
+        // connects after a pi restart (or a fork/switch to another session)
+        // sees the conversation instead of a blank page. A fresh /new has no
+        // message entries and seeds nothing.
+        seedFromSession(ctx)
         setupEvents(pi)
         // Mirror held mid-run input into the browser composer.
         setHeldInputListener(() => setHeld(heldInput(), isRunActive()))
