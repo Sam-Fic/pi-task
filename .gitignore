@@ -10,3 +10,7 @@ nexttask*.md
 
 # Run state written by /task when pi-task is developed on itself.
 .pi-tasks/
+
+# Local-only artifacts: npm lockfile (repo uses bun) and the offline UI preview.
+package-lock.json
+preview.html
