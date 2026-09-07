@@ -1808,8 +1808,12 @@ function stage0Logic(wsUrl: string): string {
         /* Streaming stays expanded so you can watch it think; on completion
            the block folds back up unless the user turned that off. */
         if (thinkingAutoCollapse()) {
-          currentThinking.value = '';
-          currentThinking.removeAttribute('value');
+          /* Collapse through the group's value, and ONLY that: a follow-up
+             removeAttribute lands in the same Lit update, re-sets value to
+             undefined, and mdui's observer (reading e.length) throws before
+             it ever runs updateItems() — the item stays expanded until some
+             unrelated DOM change happens to flush it. */
+          currentThinking.value = [];
           // An open->close inside one Lit update cycle fires no 'close'
           // event, which would strand the .open class (chevron + shape).
           currentThinking.classList.remove('open');
