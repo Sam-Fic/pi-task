@@ -10,10 +10,12 @@ import {
     registerRemoteOnlyCommand,
     publishNotify,
     cancelPendingPrompts,
-    notifyBoth
+    notifyBoth,
+    dispatchRemoteSwitchSession
 } from './bridge.js'
 import {setupEvents} from './events.js'
 import {seedFromSession} from './backfill.js'
+import {listSessionSummaries} from './sessions.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
 import {resolveModel, specOf} from '../shared/model-resolve.js'
@@ -53,9 +55,21 @@ type Shared = {
      * generation's API from here instead.
      */
     pi: ExtensionAPI | null
+    /** Current session's cwd and file, re-seeded at every session_start and
+     *  session switch — the sidebar's list and "current" marker read them. */
+    cwd: string | null
+    sessionPath: string | null
 }
 const _g = globalThis as unknown as Record<string, Shared | undefined>
-if (!_g.__piRemote) _g.__piRemote = {server: null, send: null, serveResult: null, pi: null}
+if (!_g.__piRemote)
+    _g.__piRemote = {
+        server: null,
+        send: null,
+        serveResult: null,
+        pi: null,
+        cwd: null,
+        sessionPath: null
+    }
 
 const S = _g.__piRemote!
 
@@ -177,7 +191,37 @@ export function registerRemote(pi: ExtensionAPI): void {
                     publishNotify(`Model switch failed: ${(err as Error).message}`, 'error')
                 }
             },
-            collectModels
+            collectModels,
+            // The session sidebar: the project's persisted sessions with the
+            // active one marked. cwd/sessionPath are re-seeded at every
+            // session_start, so this reads current state at call time.
+            async () => {
+                if (!S.cwd) return null
+                return {
+                    type: 'sessions' as const,
+                    current: S.sessionPath,
+                    sessions: await listSessionSummaries(S.cwd)
+                }
+            },
+            // Sidebar pick → switch the live session. The replacement re-runs
+            // registration (whose session_start resets + backfills the target
+            // transcript into the browser); here we only adopt the fresh send
+            // path and re-mark every sidebar's current row.
+            path =>
+                dispatchRemoteSwitchSession(path, newCtx => {
+                    S.send = (msg, opts) => {
+                        void (opts ?
+                            newCtx.sendUserMessage(msg, opts)
+                        :   newCtx.sendUserMessage(msg))
+                    }
+                    S.sessionPath = newCtx.sessionManager.getSessionFile() ?? null
+                    S.cwd = newCtx.sessionManager.getCwd()
+                    void listSessionSummaries(S.cwd)
+                        .then(sessions =>
+                            getState().sink({type: 'sessions', current: S.sessionPath, sessions})
+                        )
+                        .catch(() => {})
+                })
         )
         // Hands-off HTTPS: point Tailscale serve at our port so phones get a
         // secure context. Best-effort — any failure degrades to the http URL.
@@ -189,6 +233,10 @@ export function registerRemote(pi: ExtensionAPI): void {
 
     pi.on('session_start', (_event, ctx) => {
         S.send = (text, opts) => (opts ? pi.sendUserMessage(text, opts) : pi.sendUserMessage(text))
+        // The sidebar's list scope and current-row marker. Optional-chained:
+        // test ctxs (and exotic hosts) may carry no sessionManager.
+        S.cwd = ctx.sessionManager?.getCwd?.() ?? S.cwd
+        S.sessionPath = ctx.sessionManager?.getSessionFile?.() ?? S.sessionPath
         // A new session (incl. /new and the /task handoff's newSession) means the
         // browser is showing a stale transcript/widgets — wipe the authoritative
         // state and tell connected clients to clear.

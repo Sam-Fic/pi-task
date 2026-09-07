@@ -483,6 +483,36 @@ export function dispatchRemoteNewSession(rebind: (ctx: ReplacedSessionContext) =
     }
 }
 
+/** Switch to another persisted session in response to a browser sidebar pick.
+ *  Same lifecycle as /new: the replacement re-registers extensions (whose
+ *  session_start resets SessionState and backfills the target session's
+ *  transcript), and `withSession` hands us the fresh command ctx to adopt. */
+export function dispatchRemoteSwitchSession(
+    path: string,
+    rebind: (ctx: ReplacedSessionContext) => void
+): void {
+    const b = getBridge()
+    const ctx = b.currentCtx
+    if (!ctx) {
+        publishNotify('No session context available — restart pi and try again.', 'warning')
+        return
+    }
+    const toastErr = (err: unknown) =>
+        publishNotify(`Session switch failed: ${(err as Error).message}`, 'error')
+    try {
+        const result = ctx.switchSession(path, {
+            // eslint-disable-next-line @typescript-eslint/require-await
+            withSession: async newCtx => {
+                b.currentCtx = newCtx
+                rebind(newCtx)
+            }
+        })
+        if (result instanceof Promise) result.catch(toastErr)
+    } catch (err) {
+        toastErr(err)
+    }
+}
+
 /** Handle one line typed in a browser. Returns true if it was consumed as a
  *  slash command (registered or unknown); false if it's a plain chat line that
  *  the caller should forward via onPlain. */

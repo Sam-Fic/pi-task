@@ -27,6 +27,8 @@ interface StartArgs {
     onClearHeld?: () => void
     onSetModel?: (spec: string) => void
     getModels?: () => unknown
+    getSessions?: () => unknown
+    onSwitchSession?: (path: string) => void
 }
 
 const started: StartArgs[] = []
@@ -56,9 +58,20 @@ void mock.module('../../src/remote/server.js', () => ({
         onInterrupt?: () => void,
         onClearHeld?: () => void,
         onSetModel?: StartArgs['onSetModel'],
-        getModels?: StartArgs['getModels']
+        getModels?: StartArgs['getModels'],
+        getSessions?: StartArgs['getSessions'],
+        onSwitchSession?: StartArgs['onSwitchSession']
     ) => {
-        started.push({onMessage, getHtml, onInterrupt, onClearHeld, onSetModel, getModels})
+        started.push({
+            onMessage,
+            getHtml,
+            onInterrupt,
+            onClearHeld,
+            onSetModel,
+            getModels,
+            getSessions,
+            onSwitchSession
+        })
         if (startFails) throw startFails
         return handle
     }
@@ -143,11 +156,19 @@ const remoteGlobal = (): {
     server: ServerHandle | null
     serveResult: ServeResult | null
     pi: unknown
+    cwd: string | null
+    sessionPath: string | null
 } =>
     (
         globalThis as unknown as Record<
             string,
-            {server: ServerHandle | null; serveResult: ServeResult | null; pi: unknown}
+            {
+                server: ServerHandle | null
+                serveResult: ServeResult | null
+                pi: unknown
+                cwd: string | null
+                sessionPath: string | null
+            }
         >
     ).__piRemote!
 
@@ -163,6 +184,8 @@ beforeEach(() => {
     remoteGlobal().server = null
     remoteGlobal().serveResult = null
     remoteGlobal().pi = null
+    remoteGlobal().cwd = null
+    remoteGlobal().sessionPath = null
     const b = getBridge()
     b.sent.length = 0
     b.commands.clear()
@@ -514,5 +537,102 @@ test('session_start backfills the transcript from the persisted session', () => 
     // reset() fired the clearing frame first; the re-sent snapshot must be the
     // LAST frame, so a browser applies the seeded view, not the empty one.
     expect((seeded.at(-1) as {type: string}).type).toBe('snapshot')
+    _setSink(m => realBroadcast(m))
+})
+
+// ───────────── Session sidebar wiring ─────────────
+
+test('session_start records the cwd and session file the sidebar reads', () => {
+    getConfig().remote = true
+    const {pi, on} = fakePi()
+    registerRemote(pi)
+    on.get('session_start')!(
+        {} as never,
+        {
+            isIdle: () => true,
+            ui: {notify: () => {}},
+            sessionManager: {
+                getCwd: () => '/home/me/project',
+                getSessionFile: () => '/home/me/.pi/sessions/proj/2026_a.jsonl'
+            }
+        } as never
+    )
+    expect(remoteGlobal().cwd).toBe('/home/me/project')
+    expect(remoteGlobal().sessionPath).toBe('/home/me/.pi/sessions/proj/2026_a.jsonl')
+})
+
+test('the getSessions callback builds the sidebar frame from the live state', async () => {
+    getConfig().remote = true
+    const {pi, on} = fakePi()
+    registerRemote(pi)
+    on.get('session_start')!(
+        {} as never,
+        {
+            isIdle: () => true,
+            ui: {notify: () => {}},
+            sessionManager: {
+                getCwd: () => '/home/me/project',
+                getSessionFile: () => '/sessions/cur.jsonl'
+            }
+        } as never
+    )
+    await Bun.sleep(5)
+    // No sessionDir override in production: the scan targets the default dir
+    // for this cwd, which does not exist here — an empty list, current marked.
+    const frame = (await started[0]!.getSessions?.()) as {
+        type: string
+        current: string | null
+        sessions: unknown[]
+    }
+    expect(frame).toMatchObject({type: 'sessions', current: '/sessions/cur.jsonl', sessions: []})
+})
+
+test('a sidebar pick dispatches switchSession and the rebind re-marks the current row', async () => {
+    getConfig().remote = true
+    const {pi, on} = fakePi()
+    registerRemote(pi)
+    on.get('session_start')!(
+        {} as never,
+        {
+            isIdle: () => true,
+            ui: {notify: () => {}},
+            sessionManager: {
+                getCwd: () => '/home/me/project',
+                getSessionFile: () => '/sessions/old.jsonl'
+            }
+        } as never
+    )
+    await Bun.sleep(5)
+
+    // The bridge ctx: switchSession adopts the replacement via withSession.
+    // Holder object — TS can't see assignments made inside the callback.
+    const state: {switchPath: string | null} = {switchPath: null}
+    const b = getBridge()
+    const seeded: unknown[] = []
+    _setSink(m => seeded.push(m))
+    b.currentCtx = {
+        switchSession: (path: string, opts: {withSession: (ctx: unknown) => Promise<void>}) => {
+            state.switchPath = path
+            return opts.withSession({
+                sessionManager: {
+                    getSessionFile: () => '/sessions/new.jsonl',
+                    getCwd: () => '/home/me/project'
+                },
+                sendUserMessage: () => Promise.resolve()
+            })
+        }
+    } as never
+
+    const onSwitch = started[0]!.onSwitchSession!
+    expect(onSwitch).toBeTypeOf('function')
+    onSwitch('/sessions/new.jsonl')
+    await Bun.sleep(5)
+    expect(state.switchPath).toBe('/sessions/new.jsonl')
+    // The rebind: S.sessionPath moved, and every sidebar got the re-mark.
+    expect(remoteGlobal().sessionPath).toBe('/sessions/new.jsonl')
+    const frame = seeded.find(m => (m as {type: string}).type === 'sessions') as {
+        current: string | null
+    }
+    expect(frame?.current).toBe('/sessions/new.jsonl')
     _setSink(m => realBroadcast(m))
 })

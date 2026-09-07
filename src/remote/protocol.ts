@@ -61,6 +61,23 @@ export interface ModelsMessage {
     models: {spec: string; name: string}[]
 }
 
+/** The session sidebar's data: every session for this project, newest first.
+ *  `name` is the user-set display name (null when the session was never
+ *  named); the browser falls back to `firstMessage` as the row's title. */
+export interface SessionsMessage {
+    type: 'sessions'
+    /** Path of the active session, null when unknown. */
+    current: string | null
+    sessions: {
+        path: string
+        name: string | null
+        firstMessage: string
+        /** ISO timestamp of the last write. */
+        modified: string
+        messageCount: number
+    }[]
+}
+
 /** The single task-widget slot. `lines: null` clears it. `data` carries the
  *  structured view (null when clearing or when a producer only has text). */
 export interface WidgetMessage {
@@ -121,6 +138,7 @@ export type ServerMessage =
     | ContextMessage
     | ResetMessage
     | ModelsMessage
+    | SessionsMessage
     | import('./session-state.js').SnapshotMessage
 
 /** Browser → server messages. */
@@ -146,8 +164,23 @@ export interface ClientSetModel {
     type: 'set_model'
     spec: string
 }
+/** Refresh the sidebar's session list (sent when the drawer opens). */
+export interface ClientListSessions {
+    type: 'list_sessions'
+}
+/** Switch the active session (browser sidebar row). */
+export interface ClientSwitchSession {
+    type: 'switch_session'
+    path: string
+}
 export type ClientMessage =
-    ClientChatMessage | ClientPromptAnswer | ClientInterrupt | ClientClearHeld | ClientSetModel
+    | ClientChatMessage
+    | ClientPromptAnswer
+    | ClientInterrupt
+    | ClientClearHeld
+    | ClientSetModel
+    | ClientListSessions
+    | ClientSwitchSession
 
 export function isClientMessage(x: unknown): x is ClientMessage {
     if (typeof x !== 'object' || x === null) return false
@@ -159,5 +192,7 @@ export function isClientMessage(x: unknown): x is ClientMessage {
         return typeof m.id === 'string' && (m.value === undefined || typeof m.value === 'string')
     }
     if (m.type === 'set_model') return typeof m.spec === 'string' && m.spec.length > 0
+    if (m.type === 'list_sessions') return true
+    if (m.type === 'switch_session') return typeof m.path === 'string' && m.path.length > 0
     return false
 }

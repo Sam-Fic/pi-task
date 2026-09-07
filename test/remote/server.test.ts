@@ -647,3 +647,56 @@ test('a handler that throws synchronously degrades to an error toast, never an u
     ws.close()
     srv.stop()
 })
+
+test('the session sidebar: list rides connect, refreshes on demand, switch reaches the handler', async () => {
+    // Holder, not a bare `let`: TS can't see the callback assignment and would
+    // narrow the variable to null at the assertion.
+    const state: {switched: string | null} = {switched: null}
+    let listCalls = 0
+    const srv = await startServer(
+        () => {},
+        () => '<html></html>',
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+        () => {
+            listCalls++
+            return {
+                type: 'sessions',
+                current: '/sessions/a.jsonl',
+                sessions: [
+                    {
+                        path: '/sessions/a.jsonl',
+                        name: 'auth work',
+                        firstMessage: 'fix the login flow',
+                        modified: '2026-09-07T10:00:00Z',
+                        messageCount: 12
+                    }
+                ]
+            }
+        },
+        picked => {
+            state.switched = picked
+        }
+    )
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`)
+    await new Promise(r => ws.on('open', r))
+    // The connect greeting carries the sidebar data alongside the snapshot.
+    const greeting = await once(ws, 'sessions')
+    expect(greeting).toMatchObject({current: '/sessions/a.jsonl'})
+    expect(greeting.sessions).toHaveLength(1)
+    expect(listCalls).toBe(1)
+
+    // Drawer opened → explicit refresh.
+    ws.send(JSON.stringify({type: 'list_sessions'}))
+    await once(ws, 'sessions')
+    expect(listCalls).toBe(2)
+
+    // A row tap reaches the switch handler with the picked path.
+    ws.send(JSON.stringify({type: 'switch_session', path: '/sessions/b.jsonl'}))
+    await new Promise(r => setTimeout(r, 50))
+    expect(state.switched).toBe('/sessions/b.jsonl')
+    ws.close()
+    srv.stop()
+})

@@ -5,7 +5,7 @@ import {addClient, removeClient, sendTo} from './broadcast.js'
 import {answerPrompt, publishNotify} from './bridge.js'
 import {getState, snapshot} from './session-state.js'
 import {isClientMessage} from './protocol.js'
-import type {ModelsMessage} from './protocol.js'
+import type {ModelsMessage, SessionsMessage} from './protocol.js'
 import {swJs} from './sw.js'
 import {publicKey, addSubscription, getSubscriptions, logPush} from './push.js'
 import type {PushSubscriptionJSON} from './push.js'
@@ -137,7 +137,13 @@ export async function startServer(
     onSetModel?: (spec: string) => void,
     /** Fresh model catalogue for the picker, read at connect time. Returning
      *  null (no live ctx yet) just omits the frame. */
-    getModels?: () => ModelsMessage | null
+    getModels?: () => ModelsMessage | null,
+    /** Fresh session list for the sidebar: sent on connect, on list_sessions
+     *  (drawer opened), and after a switch re-marks the current row. May be
+     *  async (the scan reads every session file). Returning null omits it. */
+    getSessions?: () => SessionsMessage | null | Promise<SessionsMessage | null>,
+    /** Switch the active session (browser sidebar pick). */
+    onSwitchSession?: (path: string) => void
 ): Promise<ServerHandle> {
     const ips = getLocalIPs()
     const ip = ips.primary
@@ -241,6 +247,12 @@ export async function startServer(
         // current model's NAME for the chip; this frame feeds the picker menu.
         const models = getModels?.()
         if (models) sendTo(ws, models)
+        // And the session sidebar's data (async — the scan reads session files).
+        void Promise.resolve(getSessions?.())
+            .then(sessions => {
+                if (sessions && ws.readyState === ws.OPEN) sendTo(ws, sessions)
+            })
+            .catch(() => {})
 
         ws.on('message', data => {
             let msg: unknown
@@ -270,6 +282,20 @@ export async function startServer(
                 }
                 if (msg.type === 'set_model') {
                     onSetModel?.(msg.spec)
+                    return
+                }
+                if (msg.type === 'list_sessions') {
+                    // Drawer opened — refresh the list (it may have gone stale
+                    // since connect). Async scan; guarded like the connect path.
+                    void Promise.resolve(getSessions?.())
+                        .then(sessions => {
+                            if (sessions && ws.readyState === ws.OPEN) sendTo(ws, sessions)
+                        })
+                        .catch(() => {})
+                    return
+                }
+                if (msg.type === 'switch_session') {
+                    onSwitchSession?.(msg.path)
                     return
                 }
                 // type === 'message': ignore while a prompt is pending (composer is

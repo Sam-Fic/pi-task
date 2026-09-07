@@ -153,10 +153,57 @@ html, body {
 .scroll-thumb.dragging { background: color-mix(in srgb, rgb(var(--mdui-color-on-surface-variant)) 80%, transparent); }
 #root {
     display: grid;
-    /* The app bar now overlays #chat-wrap (mdui-top-app-bar), so the chat
-       area is the first row. */
-    grid-template-rows: 1fr auto auto auto;
+    /* One child: the session drawer wraps the whole main column. */
+    grid-template-rows: minmax(0, 1fr);
     height: var(--app-height, 100dvh);
+}
+
+/* Session sidebar. m3e-drawer-container overlays the drawer (over-mode, with
+   scrim) on the main column; #main-col takes over #root's old rows so the
+   app-bar/chat/bands layout is untouched. */
+#main-col { display: grid; grid-template-rows: 1fr auto auto auto; min-height: 0; }
+#drawer { --m3e-drawer-container-width: min(84vw, 20rem); }
+#session-drawer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: calc(var(--safe-top) + 0.5rem) 0.5rem 0.75rem;
+    box-sizing: border-box;
+    height: 100%;
+}
+#session-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.5rem;
+}
+#session-drawer-title { font-size: 0.95rem; font-weight: 600; }
+#session-list { flex: 1; min-height: 0; overflow-y: auto; }
+#session-list m3e-nav-menu-item {
+    /* Two-line rows: the default fixed height would clip the subtitle. */
+    --m3e-nav-menu-item-height: auto;
+}
+#session-list .s-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+    padding-block: 0.375rem;
+}
+#session-list .s-title {
+    font-size: 0.875rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+#session-list .s-sub { font-size: 0.72rem; color: rgb(var(--mdui-color-on-surface-variant)); }
+#session-list .s-empty {
+    padding: 1.25rem 1rem;
+    font-size: 0.85rem;
+    color: rgb(var(--mdui-color-on-surface-variant));
+    text-align: center;
 }
 
 /* Content of the bottom bands aligns with the centered chat column
@@ -1099,6 +1146,18 @@ export function mduiHtml(wsUrl: string): string {
 </head>
 <body>
   <div id="root">
+    <m3e-drawer-container id="drawer" start-mode="over">
+      <!-- Session sidebar: populated by the sessions frame, refreshed every
+           time the drawer opens. -->
+      <nav slot="start" id="session-drawer" aria-label="会话列表">
+        <div id="session-drawer-head">
+          <span id="session-drawer-title">会话</span>
+          <m3e-icon-button id="session-drawer-close" aria-label="关闭"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
+        </div>
+        <m3e-nav-menu id="session-list" aria-label="会话"></m3e-nav-menu>
+      </nav>
+
+      <div id="main-col">
     <main id="chat-wrap">
       <!-- Single compact bar: identity/model + status + actions. mdui's
            top-app-bar drives the hide-on-scroll-down / show-on-scroll-up
@@ -1111,6 +1170,7 @@ export function mduiHtml(wsUrl: string): string {
              line must live in a single block child to stack. -->
         <div class="bar-stack">
           <div id="app-bar">
+            <m3e-icon-button id="menu-btn" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
             <span id="status-dot"></span>
             <div id="model-picker" role="button" tabindex="0" aria-haspopup="menu" aria-label="切换模型">
               <span id="status-model">π-task remote</span>
@@ -1155,6 +1215,8 @@ export function mduiHtml(wsUrl: string): string {
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
       <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
     </footer>
+      </div><!-- /main-col -->
+    </m3e-drawer-container>
   </div>
 
   <!-- Notifications dropdown (bell lives in the app bar) -->
@@ -1249,6 +1311,10 @@ function stage0Logic(wsUrl: string): string {
     const modelPicker  = document.getElementById('model-picker');
     const modelMenu    = document.getElementById('model-menu');
     const modelList    = document.getElementById('model-list');
+    const drawer       = document.getElementById('drawer');
+    const menuBtn      = document.getElementById('menu-btn');
+    const drawerClose  = document.getElementById('session-drawer-close');
+    const sessionList  = document.getElementById('session-list');
 
     // ───────────── State ─────────────
     let connected = false, agentRunning = false, modelName = '';
@@ -1268,6 +1334,7 @@ function stage0Logic(wsUrl: string): string {
     let notifOpen = false;
     let modelCatalog = {current: null, models: []};
     let modelMenuOpen = false;
+    let sessionData = {current: null, sessions: []};
 
     // M3 Expressive wavy progress (mdui 2.x has no Expressive components yet).
     // Pinned version; loaded async so a slow CDN never blocks the app boot.
@@ -1292,6 +1359,10 @@ function stage0Logic(wsUrl: string): string {
                 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'],
         arrow_downward: ['m20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z',
                          'm20 12-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z'],
+        menu: ['M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
+               'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z'],
+        history: ['M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z',
+                  'M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z'],
         check: ['M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
                 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'],
         settings: ['M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.566.566 0 0 0-.18-.03c-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
@@ -1307,6 +1378,8 @@ function stage0Logic(wsUrl: string): string {
     import('https://esm.sh/@m3e/web@2.7.9/icon-button').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/button').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/drawer-container').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/nav-menu').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -2059,6 +2132,63 @@ function stage0Logic(wsUrl: string): string {
       if (modelMenuOpen && !modelMenu.contains(e.target)) setModelMenuOpen(false);
     });
 
+    // ───────────── Session sidebar ─────────────
+    // Fed by the server's sessions frame (on connect and every drawer open).
+    // Tapping a row asks the server to switchSession; the replacement re-runs
+    // registration, whose session_start resets the view and backfills the
+    // target transcript, so the update arrives as frames — never optimistic.
+    function fmtSessionTime(iso) {
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      const now = new Date();
+      if (d.toDateString() === now.toDateString()) {
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      }
+      const md = (d.getMonth() + 1) + '/' + d.getDate();
+      return d.getFullYear() === now.getFullYear() ? md : d.getFullYear() + '/' + md;
+    }
+    function renderSessions() {
+      const sessions = sessionData.sessions || [];
+      if (!sessions.length) {
+        sessionList.innerHTML = '<div class="s-empty">还没有其他会话</div>';
+        return;
+      }
+      sessionList.innerHTML = '';
+      for (const s of sessions) {
+        const it = document.createElement('m3e-nav-menu-item');
+        const cur = s.path === sessionData.current;
+        if (cur) it.setAttribute('selected', '');
+        const ic = document.createElement('m3e-icon');
+        ic.slot = 'icon';
+        ic.setAttribute('name', 'history');
+        const label = document.createElement('span');
+        label.slot = 'label';
+        label.className = 's-label';
+        const title = document.createElement('span');
+        title.className = 's-title';
+        title.textContent = s.name || s.firstMessage || '（空会话）';
+        const sub = document.createElement('span');
+        sub.className = 's-sub';
+        sub.textContent = fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
+        label.append(title, sub);
+        it.append(ic, label);
+        it.addEventListener('click', () => {
+          drawer.start = false;
+          if (cur || !ws || ws.readyState !== 1) return;
+          ws.send(JSON.stringify({ type: 'switch_session', path: s.path }));
+          showToast('切换会话…', 'info');
+        });
+        sessionList.appendChild(it);
+      }
+    }
+    menuBtn.addEventListener('click', () => {
+      drawer.start = true;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'list_sessions' }));
+    });
+    drawerClose.addEventListener('click', () => {
+      drawer.start = false;
+    });
+
     // ───────────── Stage 3: Command autocomplete ─────────────
     const COMMANDS = [
       { name: '/task',             desc: 'Start a new task' },
@@ -2391,6 +2521,10 @@ function stage0Logic(wsUrl: string): string {
             if (cur) setModelName(cur.name);
           }
           if (modelMenuOpen) renderModelMenu();
+          break;
+        case 'sessions':
+          sessionData = {current: m.current || null, sessions: m.sessions || []};
+          renderSessions();
           break;
         case 'agent_start':
           autoScroll = true;
