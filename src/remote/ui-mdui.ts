@@ -931,6 +931,10 @@ mdui-list#notif-list {
     cursor: pointer;
     font-size: 0.9rem;
     --shape-corner-rounded: 1.25rem;
+    /* Same two-line recipe as the model menu: bold name, regular detail.
+       The shadow parts read these typescale tokens from the host. */
+    --mdui-typescale-body-large-weight: 600;
+    --mdui-typescale-body-medium-weight: 400;
 }
 #cmd-suggestions mdui-list-item + mdui-list-item { margin-top: 0.1rem; }
 
