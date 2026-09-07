@@ -498,7 +498,7 @@ mdui-collapse.thinking {
     display: block;
     max-width: var(--chat-max-width);
     width: 100%;
-    margin: 0.25rem auto;
+    margin: 0.3rem auto;
     border-radius: var(--mdui-shape-corner-medium);
     /* A whisper of secondary tint marks "model reasoning" apart from the
        neutral tool-call cards it sits between — expressive, but the body
@@ -512,8 +512,11 @@ mdui-collapse.thinking.open { border-radius: 1.125rem; }
 .thinking .thinking-header {
     display: flex; align-items: center;
     cursor: pointer;
-    padding: 0.5rem 0.85rem;
+    /* Identical box metrics to .tool-header (same padding, font-size and
+       explicit line-height) so both collapsed cards are one height. */
+    padding: 0.6rem 0.85rem;
     font-size: 0.85rem;
+    line-height: 1.4;
     color: rgb(var(--mdui-color-on-surface-variant));
     font-weight: 500;
     user-select: none;
@@ -580,7 +583,8 @@ mdui-collapse.tool-call.error {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
     user-select: none;
     /* Flush child of the collapse — same concentric pair as the thinking
        header (explicit, since the collapse-item wrapper breaks "inherit"). */
@@ -947,6 +951,7 @@ m3e-fab#scroll-bottom {
     pointer-events: none;
     transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease;
     transition: transform 400ms var(--m3e-spring-spatial), opacity 200ms ease;
+    box-shadow: none;
 }
 m3e-fab#scroll-bottom.show {
     transform: scale(1) rotate(0deg);
@@ -1696,6 +1701,7 @@ function stage0Logic(wsUrl: string): string {
            the block folds back up unless the user turned that off. */
         if (thinkingAutoCollapse()) {
           currentThinking.value = '';
+          currentThinking.removeAttribute('value');
           // An open->close inside one Lit update cycle fires no 'close'
           // event, which would strand the .open class (chevron + shape).
           currentThinking.classList.remove('open');
@@ -1897,6 +1903,7 @@ function stage0Logic(wsUrl: string): string {
         // Fold the blocks that are already sitting expanded on the page.
         document.querySelectorAll('mdui-collapse.thinking.open').forEach((c) => {
           c.value = '';
+          c.removeAttribute('value');
           c.classList.remove('open');
         });
       }
