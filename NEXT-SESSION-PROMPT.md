@@ -66,142 +66,64 @@ It does not pin the model, and a host model is not the container's.
 
 Defects 14, 16, 18, 20, 21 and 24, the recall gate and seven self-review or
 scorer bugs all closed in the 2026-09-06 session, shipped as **0.40.10** through
-**0.40.14**. Defects 22 and 23 are mechanised and have no lever. Defect 19 turned
-out to be the seed — see item 2. Their numbers are in `DOC_REGRESSINONS.md`; none
-needs re-deriving.
+**0.40.14**. Defects 19, 22 and 23 are mechanised and have no lever. Their numbers
+are in `DOC_REGRESSINONS.md`; none needs re-deriving.
 
-The later 2026-09-06 session shipped **no `src/` change at all**. Everything it
-moved was instrument: the seed, the audit and the replay harness. That is not a
-quiet session — a two-tree A/B that could not tell a constant from a slot had
-already decided a production constant, and an audit that scored a killed run PASS
-had already reported one.
+One number for the whole session, 0.40.8 against HEAD on the defines harness:
+**80/101 -> 90/101 paired, p = 0.0129**.
 
-One number for the earlier half, 0.40.8 against HEAD on the defines harness:
-**80/101 -> 90/101 paired, p = 0.0129**. It uses no model and is not affected by
-the position confound below.
+**"Still open" is empty.** Every item is shipped, refuted, or filed with its
+mechanism. So the next round starts at the top of the loop: the full run in
+`DOCS-LIVE-RUNBOOK.md` is the only remaining DISCOVERY instrument, and it paid
+twice — re-run 4's three HARD FAILs produced defects 19 to 23, and re-run 5
+verified defect 18 live AND surfaced defect 24 and a scorer artifact that an
+earlier fix in the same session had created.
 
-The full run in `DOCS-LIVE-RUNBOOK.md` is still the only DISCOVERY instrument, and
-it paid a third time — re-run 6 is what exposed both the seed defect and the fact
-that the byte budget had become binding.
-
-0. **Read this first: every instrument in this project has been wrong this month,
-   and four of them were found in one night.** Not the docs tool — the things that
-   MEASURE it. Defects 26 to 31 are all instrument, and each one had already changed
-   a verdict before it was found:
+0. **RE-RUN 6 IS ALREADY RUNNING IN THE CONTAINER — score it first.** It was
+   launched on 0.40.14 and left mid-flight when the previous session ended, so it
+   will have finished on its own. Artifacts are in `/home/agent/docs-live/`; the
+   previous run's are in `prev-5/`.
 
    ```
-   26  the audit could not see a requirement DROPPED     ts would have read PASS
-   27  a partial answer scored as an abstention          every replay abstention
-                                                         inflated by a third to a half
-   28  a stitched excerpt refused the cache              a quarter of all answers
-   29  taskProgress counted specs written, not planned   hs read 1 of 1 against 3
-   30  the suite leaked 252 temp dirs per run            filled /tmp, broke docker exec
-   31  waitForSettle called a run settled mid-implement  hs built half-written, RED
-   32  webAfterDocs compared a package name to a URL     0 in eight runs, while hs
-                                                         run 8 fetched hackage 11x
+   docker exec mx5-n bash -lc 'cat /tmp/chain.log'      # SEQUENCE COMPLETE?
+   docker exec mx5-n bash -lc 'export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"; . ~/.ghcup/env
+     cd /home/agent/docs-live && bun scripts/docs-live-build.ts /home/agent/docs-live/run'
    ```
+   then copy `run/{ts,rs,hs}`, `*.jsonl` and `*.build.json` out and
+   `bun scripts/docs-live-audit.ts <dir> --build`.
 
-   Three more checks were tested the same way and came back CLEAN: `refusalsInResearch`
-   is sound, the fidelity flag is saturated but honest, and `enforceBudget`'s `break`
-   is load-bearing. Four for seven — the check earns its keep, and it is not a reflex.
+   **ts had already settled when the session ended: 4 tasks of 4, 10 records,
+   10% abstention, median retrieved 22,781 bytes.** Re-run 5 on the same feature
+   managed 2 tasks of 4 at 43% abstention and 16,493 bytes. rs was on task 3 of 3.
+   That is the first live evidence for the retrieve-limit change and it agrees
+   with the replay (29% -> 16%); finish reading it before anything else.
 
-   Two of them share a shape worth naming: **a predicate whose docstring justified
-   itself on a premise a later fix had quietly invalidated.** Defect 15's clause made
-   `isAbstention`'s substring match unsafe; defect 18's classifier made
-   `excerptVerified` unusable as a fabrication signal. Both fixes left their consumer
-   behind. When a measurement disagrees with a mechanism you have opened and read,
-   suspect the instrument.
+1. **Then: `RETRIEVE_CONTENT_BUDGET`, the same shape as the limit was.**
+   Raising the limit made the byte budget binding. It is 24,000, carries a
+   one-line comment, and has no measurement. Retrieval is swept and monotone with
+   ZERO losses at every step up — 12k 86/101, 24k 97, 36k 100, 48k 101, 96k 101;
+   24k vs 48k is only-24k 0, only-48k 4, p = 0.125. The deciding experiment is the
+   same one that settled the limit: `docs-replay --retrieve`, two arms at 24,000
+   and 48,000, over the recorded records. Two trees, two `XDG_CACHE_HOME`s.
 
-1. **Two constants are CLOSED. Do not re-open either without a new lever.**
+2. **Nothing else is open.** `PACKAGE_RETRIEVE_LIMIT` was the
+   last question and it is answered: 8 -> 50, defines 91/101 -> 97/101 and
+   ANSWERED 67/94 -> 79/94, McNemar p = 0.0075, abstention 29% -> 16%. Shipped in
+   0.40.14 and **no live run has exercised it**. That is the first thing the next
+   run measures — the replay corpus says the child answers more; a live run says
+   whether the extra text helps or distracts the workers that read the answers.
 
-   ```
-   RETRIEVE_CONTENT_BUDGET   24,000 -> 48,000   p = 0.3323 balanced.  STAYS at 24,000
-   PACKAGE_RETRIEVE_LIMIT    8 -> 50            p = 0.1796 balanced.  STAYS at 50,
-                                                on its retrieval half, which needs
-                                                no model
-   MIN_TOKEN_LEN             2 -> 3             the peak moves to 2 the moment one
-                                                two-letter symbol enters TRUTH
-   ```
+   Do not re-open these: dropping `IDENTIFIER_SHAPED` (90/101 -> 88/101), the
+   older npm-only limit sweep that said the plateau is 16 (it covered zod and hono
+   only), and deriving the defines truth set from the index (124 pairs against
+   101, for a circularity risk).
 
-   The limit's shipped answer-side claim (67/94 -> 79/94, p = 0.0075) does NOT
-   replicate. Three measurements now agree that retrieved VOLUME is not what makes
-   this child answer. **Stop tuning volume.** What the text IS, is what moves — see
-   defect 25.
-
-   A two-tree A/B still needs one warm-up pass then **ABBA**, scored with
-   `docs-replay --compare-pooled a1,a2 b1,b2`. The effect is five points, not the
-   twelve first reported; that first reading was mostly defect 27.
-
-2. **RE-RUN 8 IS RUNNING IN THE CONTAINER RIGHT NOW — score it first.** Launched on
-   0.40.24 at 04:27, all three re-seeded; `/tmp/run8.log` and `/tmp/run-{ts,rs,hs}.log`,
-   previous artifacts in `prev-8/`. It is the first full run with every fix below, and
-   the first whose harness will neither kill it mid-implementation nor abandon it when
-   it asks to be resumed. Note that the audit's `web lookup after a docs call` row now
-   MEANS something — it was blind until 0.40.25.
-
-   **hackage PASSED for the first time in eight runs**, on 0.40.16 plus the 0.40.24
-   harness: 4 of 4 tasks, `cabal test` green, 20 records, 1 abstention — 5% against a
-   history of 55, 80, 83, 46, 100 and 33. Read it with defect 32 beside it: the same
-   run fetched hackage eleven times for `wai-test` and `aeson`, which no abstention
-   rate can see.
-
-3. **Defect 25 is the shape that pays: what the chunks ARE.** 3.8% of chunks held
-   51.1% of all indexed bytes, cut at 8 KiB byte offsets. Two fixes shipped — every
-   slice keeps its path line, and an oversized declaration splits at its members —
-   for defines 137/153 -> 148/153, p = 0.0034. Splitting CLASS members too was
-   measured and buys nothing (p = 1.0000); the patch is not kept.
-
-4. **Still open on defines, 8 of 173, and none of it is a constant.**
-
-   ```
-   bun:test:describe 5/6   bun:test:expect 5/6   bun:test:it 3/6
-   hono:Hono 12/13   hono:json 10/11   node:fs/promises:readFile 1/2
-   ```
-
-   Refuted on the way here, do not redo: `enforceBudget`'s `break` (packing is worse,
-   150 -> 149, the hops get evicted), and teaching the alias hop to see
-   `export const` (151 -> 149, the hop evicts the declaration it was chasing a type
-   for). Both are pinned by tests that say "on purpose".
-
-5. **The residual is a RANKING problem and adding chunks cannot fix it.** Every
-   symbol still missing on defines has a 66-to-225-byte declaration in its own
-   package; `zod:email`'s five misses each retrieve 17 to 38 chunks and 21.5 to 24 KB
-   without it. Three levers that FETCH one all lost, because
-   `enforceBudget([kept[0], ...hops, ...kept.slice(1)])` evicts a ranked chunk for
-   every chunk added:
-
-   ```
-   enforceBudget `break` -> `continue`         150/157 -> 149/157   p = 1.0000
-   alias hop reads `export const`              151/159 -> 149/159   p = 0.5000
-   definitionChunk for the query's symbols     151/159 -> 147/159   p = 0.2891
-   ```
-
-   **Promotion is the one direction that is not negative.** It reorders rather than
-   adds — a chunk declaring a query symbol sorts ahead of one that only uses it:
-
-   ```
-   159 pairs   151 -> 154   p = 0.5078
-   173 pairs   160 -> 165   p = 0.2266     npm 84/97 -> 90/97
-   ```
-
-   Not shipped at p = 0.2266, against a budget refused at 0.1360 tonight. More corpus
-   halved its p-value once and would again. Do NOT sort the promoted group
-   smallest-first — measured, 6 for 6, exactly nothing. What is untested is a bm25
-   rank ADJUSTED by declaration rather than partitioned on it.
-
-6. **Write a TRUTH entry the way the last four were, or not at all: named by a
-   recorded query, declared by the published docs.** Reading the index for candidates
-   is how a truth set stops being one. The member split was REJECTED at 125/128 and
-   then shipped at p = 0.0005 on the same data, because `TRUTH` had no entry for a
-   single package it repairs. `TruthEntry.named` exists for `Bun.file` vs
-   `function file`; selection is whole-token since `queryAsks`.
-
-7. **Three live runs now say the same thing about ts, and it is not a docs defect.**
-   The tool named `z.email()` correctly in every run since the dead-major fix, and
-   the code shipped `z.string().email()` twice and `z.string()` once. Nothing in
-   retrieval or extraction is implicated. Defect 26's obligation check is what sees
-   the third case at all.
-
+   **And read this before filing anything as unfixable.** Defects 22 and 23 were
+   both filed with a mechanism and "no lever" — an FTS schema change, or splitting
+   class bodies and orphaning signatures. Both were closed by raising a constant
+   two functions away that nobody had measured: `scotty:scotty` 2/7 -> 7/7,
+   hackage 26/33 -> 33/33. Before writing "no lever", check the constants the
+   mechanism runs inside.
 2. **Run the defines harness before and after anything you change.** It is real
    now, with tests. `bun scripts/docs-defines.ts … --out a.jsonl` then
    `--compare a.jsonl b.jsonl` for an exact paired McNemar. Two arms means two

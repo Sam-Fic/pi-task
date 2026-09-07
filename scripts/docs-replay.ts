@@ -38,7 +38,6 @@ import {projectCorpus} from '../src/workers/docs-project.js'
 import {isAbstention} from '../src/workers/abstention.js'
 import {normaliseWhitespace} from '../src/shared/child-output.js'
 import {groupChildArgs} from '../src/config/group-args.js'
-import {mcnemar} from './docs-defines.js'
 import type {DocsCorpus} from '../src/workers/docs-lookup.js'
 import type {ResolvedPackage} from '../src/workers/docs-resolve.js'
 import type {EcosystemId} from '../src/workers/docs-ecosystems.js'
@@ -71,8 +70,7 @@ export interface SkippedRecord {
 const REGISTRY_TO_ECOSYSTEM: Record<string, EcosystemId> = {
     npm: 'npm',
     'crates.io': 'cargo',
-    hackage: 'hackage',
-    'proxy.golang.org': 'go'
+    hackage: 'hackage'
 }
 
 /** Which corpus the recorded lookup read, named well enough to retrieve it again. */
@@ -264,106 +262,6 @@ export async function retrieveLive(rec: ReplayRecord, cwd: string): Promise<Mate
     }
 }
 
-/**
- * Compare two ledgers written by two TREES, on the constant each was built with.
- *
- * `--arm` is the defect 15 clause lever and cannot express a build-time constant,
- * so a budget or limit A/B runs production's arm twice, once per tree, and pairs
- * the ledgers here. Pairing is what the design is: the same recorded query in both
- * arms. An unpaired test on it has already read p = 0.34 where the paired one said
- * 0.0019.
- *
- * ABSTENTION is the scored outcome. It is the one thing a child does that is not a
- * matter of degree, and it is what the retrieve limit moved.
- */
-/**
- * Pool several passes per arm before pairing, which is the only honest way to read
- * a two-tree A/B.
- *
- * WHY. Running arm A's whole record set and then arm B's makes ARM and POSITION the
- * same variable, and position is worth more than any constant measured so far: four
- * alternating passes over one fixed record set answered 76, 85, 88 and 89 of 103,
- * and an A/A over identical bytes read p = 0.0118 while the A/B beside it read
- * p = 0.0636. A single-pass two-tree comparison cannot tell a constant from a slot.
- *
- * So the protocol is one warm-up pass, discarded, then ABBA — each arm holding one
- * early slot and one late one — and this scores it. A record counts for an arm when
- * that arm answered it more often across its passes.
- *
- * `--arm` does not need any of this: both arms of one record run back to back in
- * one process, so they share a position. Only a build-time constant forces two
- * trees, and only two trees order the arms in blocks.
- */
-export function comparePooled(
-    aPasses: readonly (readonly ReplayRow[])[],
-    bPasses: readonly (readonly ReplayRow[])[]
-): string {
-    const key = (r: ReplayRow): string => `${r.source}|${r.module}|${r.query}|${r.trial}`
-    const index = (rows: readonly ReplayRow[]): Map<string, ReplayRow> =>
-        new Map(rows.map(r => [key(r), r]))
-    const a = aPasses.map(index)
-    const b = bPasses.map(index)
-    const all = [...a, ...b]
-    if (all.length === 0) return 'no passes given'
-    let onlyA = 0
-    let onlyB = 0
-    let tied = 0
-    for (const k of all[0].keys()) {
-        if (!all.every(m => m.has(k))) continue
-        const answered = (ms: Map<string, ReplayRow>[]): number =>
-            ms.filter(m => !(m.get(k) as ReplayRow).unclear).length
-        const ca = answered(a)
-        const cb = answered(b)
-        if (ca > cb) onlyA++
-        else if (cb > ca) onlyB++
-        else tied++
-    }
-    const n = onlyA + onlyB + tied
-    if (n === 0) return 'no record appears in every pass'
-    const rate = (ms: Map<string, ReplayRow>[]): string => {
-        const answered = ms.reduce((t, m) => t + [...m.values()].filter(r => !r.unclear).length, 0)
-        const of = ms.reduce((t, m) => t + m.size, 0)
-        return `${answered}/${of}`
-    }
-    return [
-        `records ${n}   A better ${onlyA}   B better ${onlyB}   tied ${tied}`,
-        `answered over all passes  A ${rate(a)}   B ${rate(b)}`,
-        `McNemar exact, two-sided: p = ${mcnemar(onlyA, onlyB).toExponential(3)}`
-    ].join('\n')
-}
-
-export function comparePaired(a: readonly ReplayRow[], b: readonly ReplayRow[]): string {
-    const key = (r: ReplayRow): string => `${r.source}|${r.module}|${r.query}|${r.trial}`
-    const mb = new Map(b.map(r => [key(r), r]))
-    let both = 0
-    let onlyA = 0
-    let onlyB = 0
-    let neither = 0
-    let bytesA = 0
-    let bytesB = 0
-    for (const ra of a) {
-        const rb = mb.get(key(ra))
-        if (rb === undefined) continue
-        // Answered, not abstained: the direction a reader expects "only-B" to mean.
-        const ansA = !ra.unclear
-        const ansB = !rb.unclear
-        if (ansA && ansB) both++
-        else if (ansA) onlyA++
-        else if (ansB) onlyB++
-        else neither++
-        bytesA += ra.bytes
-        bytesB += rb.bytes
-    }
-    const pairs = both + onlyA + onlyB + neither
-    if (pairs === 0) return 'no paired rows: the two ledgers share no (source, module, query, trial)'
-    return [
-        `pairs ${pairs}   both ${both}   only-A ${onlyA}   only-B ${onlyB}   neither ${neither}`,
-        `answered  A ${both + onlyA}/${pairs}   B ${both + onlyB}/${pairs}`,
-        `mean bytes shown  A ${Math.round(bytesA / pairs)}   B ${Math.round(bytesB / pairs)}`,
-        `McNemar exact, two-sided: p = ${mcnemar(onlyA, onlyB).toExponential(3)}`
-    ].join('\n')
-}
-
 /** One trial. Written to the ledger before anything is tallied. */
 export interface ReplayRow {
     source: string
@@ -510,10 +408,6 @@ interface Options {
     cwd: string
     /** A project root to re-retrieve against, or null for the recorded bytes. */
     retrieve: string | null
-    /** Two ledgers to pair and score, instead of running anything. */
-    compare: [string, string] | null
-    /** Ledgers per arm, `a1,a2 b1,b2`, pooled before pairing. */
-    comparePooled: [string, string] | null
 }
 
 export function parseArgs(argv: readonly string[]): Options {
@@ -527,9 +421,7 @@ export function parseArgs(argv: readonly string[]): Options {
         dryRun: false,
         out: null,
         cwd: process.cwd(),
-        retrieve: null,
-        compare: null,
-        comparePooled: null
+        retrieve: null
     }
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]
@@ -538,8 +430,6 @@ export function parseArgs(argv: readonly string[]): Options {
         else if (a === '--only') opts.only = argv[++i] as Options['only']
         else if (a === '--module') opts.module = argv[++i]
         else if (a === '--retrieve') opts.retrieve = argv[++i]
-        else if (a === '--compare') opts.compare = [argv[++i], argv[++i]]
-        else if (a === '--compare-pooled') opts.comparePooled = [argv[++i], argv[++i]]
         else if (a === '--limit') opts.limit = Number(argv[++i])
         else if (a === '--out') opts.out = argv[++i]
         else if (a === '--cwd') opts.cwd = argv[++i]
@@ -547,33 +437,12 @@ export function parseArgs(argv: readonly string[]): Options {
         else if (a.startsWith('--')) throw new Error(`docs-replay: unknown flag ${a}`)
         else opts.files.push(a)
     }
-    if (opts.compare === null && opts.comparePooled === null && opts.files.length === 0) {
-        throw new Error('docs-replay: give at least one recorded .jsonl')
-    }
+    if (opts.files.length === 0) throw new Error('docs-replay: give at least one recorded .jsonl')
     return opts
-}
-
-function readLedger(p: string): ReplayRow[] {
-    return fs
-        .readFileSync(p, 'utf8')
-        .split('\n')
-        .filter(l => l.trim().length > 0)
-        .map(l => JSON.parse(l) as ReplayRow)
 }
 
 async function main(): Promise<void> {
     const opts = parseArgs(process.argv.slice(2))
-    if (opts.compare) {
-        console.log(comparePaired(readLedger(opts.compare[0]), readLedger(opts.compare[1])))
-        return
-    }
-    if (opts.comparePooled) {
-        const passes = (spec: string): ReplayRow[][] => spec.split(',').map(readLedger)
-        console.log(
-            comparePooled(passes(opts.comparePooled[0]), passes(opts.comparePooled[1]))
-        )
-        return
-    }
     const {records, skipped} = loadCorpusFiles(opts.files)
     const matching = records.filter(
         r =>

@@ -38,21 +38,6 @@ export const MAX_CHUNK_BYTES = 8 * 1024
 export const DECL_SPLIT_RE =
     /^(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|namespace|module|const|let|var|enum)\s+/m
 
-/**
- * Where a member of an oversized declaration begins — the same heads, indented.
- *
- * `declare module "bun" { … }` is ONE top-level declaration holding a whole module,
- * so `DECL_SPLIT_RE` matches once and everything after it was cut at byte offsets.
- * That shape is rare and enormous: 3.8% of indexed chunks sat at the cap and held
- * 51.1% of all indexed bytes, 86.8% of `@types/node`'s and 78.1% of `bun-types`'.
- *
- * Only reached when a declaration does not fit. A member split applied to every
- * declaration would cut an interface away from its own members, which is the thing
- * `DECL_SPLIT_RE` exists to prevent.
- */
-export const MEMBER_SPLIT_RE =
-    /^[ \t]+(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|namespace|module|const|let|var|enum)\s+/m
-
 /** Where a README section starts. */
 export const README_SPLIT_RE = /^#{1,2} /m
 

@@ -15,14 +15,7 @@ import {execFileSync} from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import {readTypeOnlyLog, type TypeOnlyLogRecord} from '../src/workers/typeonly-log.js'
-import {
-    PROJECTS,
-    TRUTH,
-    STALE,
-    type ProjectSpec,
-    type TruthEntry,
-    OBLIGATIONS
-} from './docs-live-truth.js'
+import {PROJECTS, TRUTH, STALE, type ProjectSpec, type TruthEntry} from './docs-live-truth.js'
 
 const IDENTIFIER_RE = /[A-Za-z_][A-Za-z0-9_']{2,}/g
 const CODE_SPAN_RE = /`([^`]+)`/g
@@ -107,6 +100,51 @@ function memberOfLanguageGlobal(span: string): Set<string> {
     for (const m of span.matchAll(
         /([A-Za-z_][A-Za-z0-9_]*)\s*(?:\.|::)\s*([A-Za-z_][A-Za-z0-9_]*)/g
     ))
+        if (LANGUAGE_WORDS.has(m[1])) out.add(m[2])
+    return out
+}
+
+/** `admin_email` and `adminEmail` are the same symbol under `#[serde(rename_all)]`. */
+function caseFold(token: string): string {
+    return token.replace(/[_-]/g, '').toLowerCase()
+}
+
+/**
+ * A hyphenated identifier run, which `IDENTIFIER_RE` splits in two.
+ *
+ * The cargo facade fix files a supplement's chunks under the crate's PUBLISHED
+ * name — `axum-core-0.5.6/src/…` — while Rust code writes `axum_core`, and
+ * `eco-cargo.ts` treats the two as one crate. Without this the corpus offers
+ * `axum` and `core`, never `axumcore`, and the scorer calls the code spelling an
+ * invention.
+ */
+const HYPHENATED_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z_$][\w$]*)+/g
+
+/**
+ * Words the LANGUAGE provides, not the package. A literal or a stdlib global says
+ * nothing about the package's API, so it cannot be a fabrication of one. Kept to
+ * one union of the three ecosystems: a name here that a package also exports is
+ * in that package's corpus anyway, so the union costs nothing.
+ */
+const LANGUAGE_WORDS = new Set([
+    'true', 'false', 'null', 'undefined', 'void', 'await', 'async', 'return', 'const', 'let',
+    'JSON', 'Promise', 'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Map', 'Set',
+    'Math', 'console', 'RegExp', 'Symbol', 'BigInt', 'Error', 'TypeError',
+    'Ok', 'Err', 'Some', 'None', 'Vec', 'Option', 'Result', 'bool', 'str', 'u16', 'u32', 'i32',
+    'usize', 'pub', 'struct', 'impl', 'enum', 'trait', 'derive',
+    'Just', 'Nothing', 'Maybe', 'Either', 'Left', 'Right', 'Int', 'Bool', 'True', 'False',
+])
+
+/** Node's own module namespace. `node:fs/promises` is a claim about Node, not about zod. */
+const STDLIB_PATH_RE = /^node:/
+
+/**
+ * Members reached through a language global: the `stringify` of `JSON.stringify`.
+ * The claim is about the language, and the package's corpus has no reason to carry it.
+ */
+function memberOfLanguageGlobal(span: string): Set<string> {
+    const out = new Set<string>()
+    for (const m of span.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*(?:\.|::)\s*([A-Za-z_][A-Za-z0-9_]*)/g))
         if (LANGUAGE_WORDS.has(m[1])) out.add(m[2])
     return out
 }

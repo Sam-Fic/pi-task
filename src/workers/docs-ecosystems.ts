@@ -46,8 +46,7 @@ import {
     cargoExportGap,
     cargoContentFingerprint,
     cargoSupplementCandidates,
-    CARGO_DECL_SPLIT_RE,
-    CARGO_MEMBER_SPLIT_RE
+    CARGO_DECL_SPLIT_RE
 } from './eco-cargo.js'
 import {
     resolveHackage,
@@ -562,7 +561,7 @@ const cargoProfile: EcosystemProfile = {
                 // Not unpacked here. `acquire` reads crates.io for the published
                 // spelling, so `tokio-util` and `tokio_util` both land.
             }
-            const got = await cargoProfile.acquire(c.name, c.version, cwd, io)
+            const got = await cargoProfile.acquire(c.name, c.version, io)
             if (!got.success) continue
             try {
                 out.push(
