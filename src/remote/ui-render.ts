@@ -159,7 +159,7 @@ export function renderModule(): string {
         if (b.type === 'code') {
           // Header row carries the language label and a copy button (wired by
           // event delegation in clientScript — it reads the <code> textContent).
-          out += '<div class="code-block"><div class="code-head">'
+          out += '<div class="code-block"><div class="code-head' + (b.lang ? '' : ' no-lang') + '">'
             + '<div class="code-lang">' + (b.lang ? escHtml(b.lang) : '') + '</div>'
             + '<button class="copy-btn" type="button" aria-label="Copy code">Copy</button>'
             + '</div>'

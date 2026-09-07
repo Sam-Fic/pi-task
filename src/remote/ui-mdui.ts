@@ -443,11 +443,18 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
 }
 .bubble .code-block:hover .code-head { opacity: 1; }
 /* Touch devices have no hover — keep the pill faintly visible and icon-only
-   so it never covers the code. */
+   so it never covers the code. The label is gone, so the capsule collapses
+   to a circle around the button (same as the no-lang case below). */
 @media (hover: none) {
-    .bubble .code-head { opacity: 0.75; }
+    .bubble .code-head { opacity: 0.75; padding: 0.1rem; }
     .bubble .code-head .code-lang { display: none; }
 }
+/* An unlabeled block emits .no-lang. Hide the empty label (it would still
+   count as a flex item and add its gap) and drop the capsule's asymmetric
+   padding — what remains is a square head, and the inherited 999px radius
+   reads it as a circle hugging the copy button. */
+.bubble .code-lang:empty { display: none; }
+.bubble .code-head.no-lang { padding: 0.1rem; }
 .bubble .code-lang {
     color: rgb(var(--mdui-color-on-surface-variant));
     font-family: var(--font-mono);
