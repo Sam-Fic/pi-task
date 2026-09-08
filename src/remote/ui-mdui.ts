@@ -1019,7 +1019,6 @@ mdui-card#status-panel {
 }
 .settings-row { gap: 0.5rem; }
 #settings-title { font-weight: 600; }
-#theme-seg mdui-segmented-button { font-size: 0.78rem; }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
 
 mdui-list#notif-list {
@@ -1333,17 +1332,17 @@ export function mduiHtml(wsUrl: string): string {
   </div>
 
   <!-- Settings dropdown: appearance and behaviour only. The theme is a
-       three-way segmented control (light / dark / auto) instead of the old
-       cycling button — one glance shows the current mode. -->
+       three-way connected button group (light / dark / auto) instead of the
+       old cycling button — one glance shows the current mode. -->
   <div id="settings-panel" aria-hidden="true">
     <div id="settings-title">设置</div>
     <div class="settings-row">
       <span>深浅色模式</span>
-      <mdui-segmented-button-group id="theme-seg" selects="single" value="auto">
-        <mdui-segmented-button value="light">浅色</mdui-segmented-button>
-        <mdui-segmented-button value="dark">深色</mdui-segmented-button>
-        <mdui-segmented-button value="auto">自动</mdui-segmented-button>
-      </mdui-segmented-button-group>
+      <m3e-button-group id="theme-seg" variant="connected" size="small">
+        <m3e-button toggle data-value="light">浅色</m3e-button>
+        <m3e-button toggle data-value="dark">深色</m3e-button>
+        <m3e-button toggle data-value="auto" selected>自动</m3e-button>
+      </m3e-button-group>
     </div>
     <div id="thinking-collapse-row">
       <span>Thinking 自动收起</span>
@@ -1536,14 +1535,25 @@ function stage0Logic(wsUrl: string): string {
     }
 
     // ───────────── Theme (in #settings-panel) ─────────────
-    // A three-way segmented control (light / dark / auto) sits in the
-    // settings panel — former dedicated app-bar button removed. The
-    // segmented control reflects the current value and drives setTheme.
+    // A three-way connected button group (light / dark / auto) sits in the
+    // settings panel — former dedicated app-bar button removed. The group
+    // reflects the current value and drives setTheme. m3e-button toggles
+    // can be clicked off, so the handler re-anchors a bare group and keeps
+    // the radios exclusive itself (deterministic even if the group's own
+    // slot-level change handling misses a non-composed event).
     const storedTheme = localStorage.getItem('pi-task-theme') || 'auto';
     setTheme(storedTheme);
-    if (themeSeg) themeSeg.value = storedTheme;
-    if (themeSeg) themeSeg.addEventListener('change', () => {
-      const next = themeSeg.value === '' ? 'auto' : String(themeSeg.value);
+    const themeButtons = themeSeg ? Array.from(themeSeg.querySelectorAll('m3e-button')) : [];
+    const applyThemeSelection = (val) => {
+      for (const b of themeButtons) b.selected = b.getAttribute('data-value') === val;
+    };
+    applyThemeSelection(storedTheme);
+    if (themeSeg) themeSeg.addEventListener('change', (e) => {
+      const btn = e.target instanceof Element && e.target.closest ? e.target.closest('m3e-button') : null;
+      if (!btn || !themeSeg.contains(btn)) return;
+      if (!btn.selected) { btn.selected = true; return; } // never an empty group
+      for (const b of themeButtons) if (b !== btn) b.selected = false;
+      const next = btn.getAttribute('data-value') || 'auto';
       setTheme(next);
       localStorage.setItem('pi-task-theme', next);
       showToast(next === 'auto' ? '跟随系统深浅色' : next === 'dark' ? '已切换为深色模式' : '已切换为浅色模式', 'info');
