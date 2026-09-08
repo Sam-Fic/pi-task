@@ -682,7 +682,12 @@ mdui-collapse.thinking {
        matter the neighbour. Extra margins would stack onto the gap and make
        card-adjacent pairs visibly wider than bubble-to-bubble. */
     margin: 0 auto;
-    border-radius: var(--mdui-shape-corner-medium);
+    /* Capsule radius: exactly half the collapsed card's height (one
+       0.85rem/1.4 header line + two 0.6rem paddings) — a one-line card is
+       a stadium. Taller (open) states keep this same fixed radius; it is
+       the shared token the flush header consumes too. */
+    --_card-r: calc((0.85rem * 1.4 + 1.2rem) / 2);
+    border-radius: var(--_card-r);
     /* A whisper of secondary tint marks "model reasoning" apart from the
        neutral tool-call cards it sits between — expressive, but the body
        text stays on the mixed (mostly neutral) surface. */
@@ -703,8 +708,8 @@ mdui-collapse.thinking {
     /* Flush child of the collapse (through the collapse-item wrapper, so
        "inherit" would resolve against that — set the pair explicitly):
        concentric with gap 0 means equal radii. One radius for both states —
-       the card keeps its collapsed shape when expanded. */
-    border-radius: var(--mdui-shape-corner-medium);
+       the card keeps its collapsed stadium shape when expanded. */
+    border-radius: var(--_card-r);
 }
 /* Pure-CSS chevron. An L of side s and stroke t has its centroid
    0.25*(s-t) toward the corner, so the shape is pulled back by that
@@ -754,9 +759,12 @@ mdui-collapse.tool-call {
     display: block;
     max-width: var(--chat-max-width);
     width: 100%;
-    /* Same rule as .thinking: #chat-log's flex gap owns the vertical rhythm. */
+    /* Same rule as .thinking: #chat-log's flex gap owns the vertical rhythm.
+       Same capsule radius token too — both collapsed cards are identical
+       stadiums. */
     margin: 0 auto;
-    border-radius: var(--mdui-shape-corner-medium);
+    --_card-r: calc((0.85rem * 1.4 + 1.2rem) / 2);
+    border-radius: var(--_card-r);
     background: rgb(var(--mdui-color-surface-container));
     overflow: hidden;
 }
@@ -775,7 +783,7 @@ mdui-collapse.tool-call.error {
     /* Flush child of the collapse — same concentric pair as the thinking
        header (explicit, since the collapse-item wrapper breaks "inherit").
        One radius for both states, matching the thinking card. */
-    border-radius: var(--mdui-shape-corner-medium);
+    border-radius: var(--_card-r);
 }
 .tool-call .tool-header {
     --_chev-shift: calc((0.4rem - 1.5px) / -4);
