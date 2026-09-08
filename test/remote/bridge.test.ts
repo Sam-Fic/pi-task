@@ -9,7 +9,9 @@ import {
     registerBridgeCommand,
     dispatchRemoteLine,
     dispatchRemoteNewSession,
-    makeShimmedCtx
+    makeShimmedCtx,
+    isCtxUsable,
+    CTX_BOOTSTRAP_COMMAND
 } from '../../src/remote/bridge.js'
 import {broadcast as wsBroadcast} from '../../src/remote/broadcast.js'
 import {getState, _setSink, reset, snapshot} from '../../src/remote/session-state.js'
@@ -440,7 +442,7 @@ test("dispatchRemoteNewSession toasts the shim's actionable error when only a sh
         b.sent.some(
             m =>
                 (m as {type: string; message?: string}).type === 'notify'
-                && (m as {message?: string}).message?.includes('Run /remote in the terminal once')
+                && (m as {message?: string}).message?.includes('not ready yet')
         )
     ).toBe(true)
 })
@@ -474,4 +476,37 @@ test('registerBridgeCommand records the handler and forwards to pi.registerComma
     registerBridgeCommand(pi, 'task-cancel', {description: 'x', handler: () => {}})
     expect(registered).toContain('task-cancel')
     expect(b.commands.has('task-cancel')).toBe(true)
+})
+
+// ─── isCtxUsable: the session_start usability probe ──────────────────────────
+
+test('isCtxUsable rejects null, shims, and invalidated ctxs', () => {
+    expect(isCtxUsable(null)).toBe(false)
+    expect(isCtxUsable(makeShimmedCtx({isIdle: () => true} as never))).toBe(false)
+    // A replaced session's runner is invalidated: every accessor throws.
+    expect(
+        isCtxUsable({
+            get sessionManager(): never {
+                throw new Error('This extension ctx is stale after session replacement')
+            }
+        } as never)
+    ).toBe(false)
+})
+
+test('isCtxUsable accepts a live ctx and cannot decide for bare stubs', () => {
+    expect(isCtxUsable({sessionManager: {getCwd: () => '/tmp'}} as never)).toBe(true)
+    // Test stubs (and exotic hosts) may carry no sessionManager — defer to
+    // "usable" so a real ctx is never thrown away over a missing accessor.
+    expect(isCtxUsable({waitForIdle: () => {}} as never)).toBe(true)
+})
+
+test('registerBridgeCommand records the bootstrap command for pi dispatch', () => {
+    const b = getBridge()
+    const registered: string[] = []
+    const pi = {
+        registerCommand: (name: string) => registered.push(name)
+    } as unknown as import('@earendil-works/pi-coding-agent').ExtensionAPI
+    registerBridgeCommand(pi, CTX_BOOTSTRAP_COMMAND, {description: 'x', handler: () => {}})
+    expect(registered).toContain(CTX_BOOTSTRAP_COMMAND)
+    expect(b.commands.has(CTX_BOOTSTRAP_COMMAND)).toBe(true)
 })

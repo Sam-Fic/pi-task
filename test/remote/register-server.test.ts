@@ -15,7 +15,7 @@ import * as realServer from '../../src/remote/server.js'
 import * as realTailscale from '../../src/remote/tailscale.js'
 import type {ServerHandle} from '../../src/remote/server.js'
 import type {ServeResult} from '../../src/remote/tailscale.js'
-import {getBridge} from '../../src/remote/bridge.js'
+import {getBridge, CTX_BOOTSTRAP_COMMAND} from '../../src/remote/bridge.js'
 import {broadcast as realBroadcast} from '../../src/remote/broadcast.js'
 import {_setSink, getState} from '../../src/remote/session-state.js'
 import {getConfig} from '../../src/config/config.js'
@@ -94,8 +94,9 @@ const {registerRemote} =
 
 type Handlers = Map<string, (event: never, ctx: never) => unknown>
 
-function fakePi(): {pi: ExtensionAPI; on: Handlers} {
+function fakePi(): {pi: ExtensionAPI; on: Handlers; sentUserMessages: string[]} {
     const on: Handlers = new Map()
+    const sentUserMessages: string[] = []
     const pi = {
         on: (name: string, handler: (event: never, ctx: never) => unknown) => {
             // Keep the FIRST handler registered under each name. registerRemote
@@ -106,9 +107,11 @@ function fakePi(): {pi: ExtensionAPI; on: Handlers} {
             if (!on.has(name)) on.set(name, handler)
         },
         registerCommand: () => {},
-        sendUserMessage: () => {}
+        sendUserMessage: (text: string) => {
+            sentUserMessages.push(text)
+        }
     } as unknown as ExtensionAPI
-    return {pi, on}
+    return {pi, on, sentUserMessages}
 }
 
 function eventCtx(): {ctx: unknown; notifies: Array<{msg: string; level: string}>} {
@@ -227,6 +230,60 @@ test('session_start leaves the server alone when remote is disabled', async () =
 
     expect(started).toEqual([])
     expect(remoteGlobal().server).toBeNull()
+})
+
+// A brand-new session has never seen a terminal command, so the bridge's ctx is
+// the shim built from the session_start event ctx — and an event ctx has NO
+// switchSession, which is why a sidebar pick used to die with
+// "ctx.switchSession is not a function". session_start must fire the bootstrap
+// command so registerBridgeCommand captures a real command ctx.
+test('session_start fires the ctx bootstrap when the bridge has no usable ctx', async () => {
+    getConfig().remote = true
+    const {pi, on, sentUserMessages} = fakePi()
+    registerRemote(pi)
+    const {ctx} = eventCtx()
+
+    on.get('session_start')!({} as never, ctx as never)
+    await Bun.sleep(0)
+
+    expect(sentUserMessages).toEqual([`/${CTX_BOOTSTRAP_COMMAND}`])
+    // The shim is seeded synchronously so commands work even before the
+    // bootstrap's command dispatch lands.
+    expect(getBridge().currentCtx).not.toBeNull()
+})
+
+test('session_start does not bootstrap while a live real ctx is stored', async () => {
+    getConfig().remote = true
+    const {pi, on, sentUserMessages} = fakePi()
+    registerRemote(pi)
+    const {ctx} = eventCtx()
+
+    const liveCtx = {sessionManager: {getCwd: () => '/tmp', getSessionFile: () => null}} as never
+    getBridge().currentCtx = liveCtx
+    on.get('session_start')!({} as never, ctx as never)
+    await Bun.sleep(0)
+
+    expect(sentUserMessages).toEqual([])
+    expect(getBridge().currentCtx).toBe(liveCtx)
+})
+
+test('session_start replaces a stale (invalidated) ctx and bootstraps', async () => {
+    getConfig().remote = true
+    const {pi, on, sentUserMessages} = fakePi()
+    registerRemote(pi)
+    const {ctx} = eventCtx()
+
+    // What a ctx looks like after any session replacement: every accessor throws.
+    getBridge().currentCtx = {
+        get sessionManager(): never {
+            throw new Error('This extension ctx is stale after session replacement')
+        }
+    } as never
+    on.get('session_start')!({} as never, ctx as never)
+    await Bun.sleep(0)
+
+    expect(sentUserMessages).toEqual([`/${CTX_BOOTSTRAP_COMMAND}`])
+    expect(getBridge().currentCtx).not.toBeNull()
 })
 
 test('a bind failure warns and leaves pi running — remote is optional', async () => {

@@ -5,6 +5,8 @@ import {
     dispatchRemoteLine,
     dispatchRemoteNewSession,
     makeShimmedCtx,
+    isCtxUsable,
+    CTX_BOOTSTRAP_COMMAND,
     interruptAgent,
     registerBridgeCommand,
     registerRemoteOnlyCommand,
@@ -108,6 +110,14 @@ export function registerRemote(pi: ExtensionAPI): void {
     // switchSession) and every reload rebuilds the extension runner and lands
     // here with a live pi; the one the server's closures captured is dead.
     S.pi = pi
+    // Hidden no-op command (see CTX_BOOTSTRAP_COMMAND): running it is the only
+    // way to obtain a real command ctx without user interaction. Its whole
+    // effect happens in registerBridgeCommand's wrapper, which stores the ctx
+    // the host dispatch hands it.
+    registerBridgeCommand(pi, CTX_BOOTSTRAP_COMMAND, {
+        description: 'Internal: refresh the remote bridge session context.',
+        handler: () => {}
+    })
     // The browser's model picker: every authed model in the registry (never
     // getAll() — an unauthed one cannot answer, same rule as liveCatalog), plus
     // the session's current as a canonical spec so the menu can tick a row.
@@ -250,18 +260,23 @@ export function registerRemote(pi: ExtensionAPI): void {
         setupEvents(pi)
         // Mirror held mid-run input into the browser composer.
         setHeldInputListener(() => setHeld(heldInput(), isRunActive()))
-        // Seed a shimmed ctx so commands that don't need newSession (/task-list,
-        // /task-cancel, /task-auto-cancel) work immediately from the remote without
-        // any terminal interaction. Only overwrite if null or already shimmed —
-        // a real command ctx captured from a prior terminal command must survive
-        // session_start (it's updated via withSession or registerBridgeCommand,
-        // not replaced here).
-        if (
-            !bridge.currentCtx
-            || (bridge.currentCtx as unknown as Record<string, unknown>)['__piRemoteShimmed']
-                === true
-        ) {
+        // Ensure a usable ctx so browser-initiated commands work without any
+        // terminal interaction. An event ctx has NO switchSession/newSession —
+        // pi only builds those for command dispatch — so a shimmed ctx alone
+        // can't drive the sidebar's session switch. When the stored ctx is
+        // missing, a shim, or invalidated (any session replacement invalidates
+        // the old runner), seed a shim for the commands that need nothing more
+        // and immediately upgrade: fire the no-op bootstrap command through
+        // prompt()'s dispatch path so registerBridgeCommand captures a real,
+        // command-capable ctx for this generation.
+        if (!isCtxUsable(bridge.currentCtx)) {
             bridge.currentCtx = makeShimmedCtx(ctx)
+            if (getConfig().remote) {
+                // Fire-and-forget: prompt() runs the command dispatch first and
+                // returns before ever opening a turn; async failures are routed
+                // to the host's emitError by the runtime's own wrapper.
+                pi.sendUserMessage(`/${CTX_BOOTSTRAP_COMMAND}`, {expandPromptTemplates: true})
+            }
         }
         // Keep open browsers' pickers fresh: a new session re-seeds the ctx the
         // catalogue is read from (and /new can run while the server is up).

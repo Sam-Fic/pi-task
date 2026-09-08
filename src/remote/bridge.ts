@@ -387,6 +387,38 @@ export function isRemoteOrigin(ctx: ExtensionCommandContext): boolean {
 }
 
 /**
+ * Hidden no-op command whose sole purpose is to hand the bridge a real,
+ * command-capable ctx. pi only builds those during command dispatch — the ctx
+ * a session_start handler receives is an event ctx that has NEITHER
+ * switchSession NOR newSession, so a fresh session that has never seen a
+ * terminal command cannot switch sessions or /new from the browser. Invoking
+ * this command through prompt()'s dispatch path (sendUserMessage with
+ * expandPromptTemplates) makes registerBridgeCommand's wrapper capture a live
+ * command ctx without any user interaction.
+ */
+export const CTX_BOOTSTRAP_COMMAND = '__pi_task_ctx'
+
+/**
+ * Whether the bridge's stored ctx can still act for the LIVE session: present,
+ * not a shim, and not invalidated. The sessionManager getter is the cheapest
+ * probe — every accessor on a pi ctx runs assertActive(), which throws the
+ * moment its runner was invalidated (any session replacement disposes the old
+ * session, which invalidates its runner). A probe that cannot decide (test
+ * stubs without a sessionManager) defers to "usable", matching the old
+ * keep-a-real-ctx behavior.
+ */
+export function isCtxUsable(ctx: ExtensionCommandContext | null): boolean {
+    if (!ctx) return false
+    if ((ctx as unknown as Record<string, unknown>)[SHIMMED_MARKER] === true) return false
+    try {
+        ctx.sessionManager?.getCwd?.()
+        return true
+    } catch {
+        return false
+    }
+}
+
+/**
  * Wraps an event-scoped ExtensionContext so it can be used as a command ctx
  * for commands that don't need newSession (e.g. /task-resume, /task-list,
  * /task-cancel, /task-auto-cancel).
@@ -395,8 +427,10 @@ export function isRemoteOrigin(ctx: ExtensionCommandContext): boolean {
  * - newSession: throws a clear error so /task, /task-auto, /task-auto-resume
  *   show a helpful message rather than a confusing TypeError.
  *
- * The shim is replaced by a real ExtensionCommandContext the first time the
- * user runs any /task* or /remote command in the terminal.
+ * The shim is replaced by a real ExtensionCommandContext almost immediately:
+ * session_start fires the CTX_BOOTSTRAP_COMMAND bootstrap, and any /task* or
+ * /remote command in the terminal also upgrades it. Until then it only serves
+ * commands that touch none of the missing actions.
  */
 export function makeShimmedCtx(ctx: ExtensionContext): ExtensionCommandContext {
     const shim = Object.create(ctx) as ExtensionCommandContext
@@ -407,11 +441,11 @@ export function makeShimmedCtx(ctx: ExtensionContext): ExtensionCommandContext {
         }
     }
     // newSession is not available from an event ctx. Return a function that
-    // throws a clear message so the error toast is actionable.
+    // throws a clear message so the error toast is actionable. In practice this
+    // is a narrow race: session_start's bootstrap upgrades the shim within
+    // milliseconds, before any browser can drive a /new.
     ;(shim as unknown as {newSession: () => never}).newSession = (): never => {
-        throw new Error(
-            'Run /remote in the terminal once to enable /task, /task-auto, and /new from remote.'
-        )
+        throw new Error('Session context is not ready yet — try again in a moment.')
     }
     return shim
 }
