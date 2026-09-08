@@ -647,7 +647,15 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     border-collapse: collapse;
     margin-block: 0.6em;
     font-size: 0.9em;
-    overflow: hidden;
+    /* A wide table on a narrow (phone) viewport must scroll INSIDE the
+       bubble, not stretch past it. display:block turns the table into a
+       scrollable box; fit-content keeps narrow tables at their natural
+       width so only genuinely wide ones grow into a scroll. (Unbreakable
+       tokens — long paths, code spans — are what force the overflow.) */
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
     border-radius: var(--mdui-shape-corner-small);
 }
 .bubble.md th, .bubble.md td {
