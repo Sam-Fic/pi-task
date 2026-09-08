@@ -1339,9 +1339,9 @@ export function mduiHtml(wsUrl: string): string {
     <div class="settings-row">
       <span>深浅色模式</span>
       <m3e-button-group id="theme-seg" variant="connected" size="small">
-        <m3e-button toggle data-value="light">浅色</m3e-button>
-        <m3e-button toggle data-value="dark">深色</m3e-button>
-        <m3e-button toggle data-value="auto" selected>自动</m3e-button>
+        <m3e-button variant="tonal" toggle data-value="light">浅色</m3e-button>
+        <m3e-button variant="tonal" toggle data-value="dark">深色</m3e-button>
+        <m3e-button variant="tonal" toggle data-value="auto" selected>自动</m3e-button>
       </m3e-button-group>
     </div>
     <div id="thinking-collapse-row">
