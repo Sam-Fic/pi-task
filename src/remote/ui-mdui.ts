@@ -462,8 +462,10 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
        2×(code-r + pad) − 2×pad = 2×code-r. The single-line code block
        (40px) lands exactly on it too. align-content centers short content
        in the extra space; taller content overflows the min-height and
-       centering is a no-op. */
+       centering is a no-op. Same rule horizontally: a lone letter must not
+       produce a bubble narrower than the arcs can express. */
     min-height: calc(2 * var(--_code-r));
+    min-width: calc(2 * var(--_code-r));
     align-content: center;
     background: rgb(var(--mdui-color-surface-container-high));
     color: rgb(var(--mdui-color-on-surface));
@@ -478,6 +480,11 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
     /* Pure-text bubble: no code blocks inside, so the corner math doesn't
        bind — the prose inset comes straight from the padding. */
     padding: 0.75rem 1.5rem;
+    /* Roomier 24px sides mean the shared content min-width would land the
+       capsule at 88px; subtract it from the 2 × radius TOTAL instead:
+       64 − 48 padding = 16px content (2×code-r − 1.5rem), so a lone letter
+       still caps at exactly 2 × radius. */
+    min-width: calc(2 * var(--_code-r) - 1.5rem);
 }
 .msg.assistant .bubble {
     /* The one tail corner, pointing at the avatar side. The top-right keeps
