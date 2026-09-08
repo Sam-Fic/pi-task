@@ -1125,7 +1125,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     font-size: 0.78rem;
     color: rgb(var(--mdui-color-on-surface-variant));
     background: rgb(var(--mdui-color-surface-container));
-    border-radius: var(--mdui-shape-corner-extra-small);
+    border-radius: 9999px;
     padding: 0.25rem 0.6rem;
     box-sizing: border-box;
     /* addSystemLine sets textContent, so without this a multi-line note
