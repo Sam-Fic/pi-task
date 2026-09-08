@@ -1703,7 +1703,7 @@ function stage0Logic(wsUrl: string): string {
       return chatLog.scrollTop + chatLog.clientHeight >= chatLog.scrollHeight - 24;
     }
     function scrollBottom() {
-      if (autoScroll) chatLog.scrollTop = chatLog.scrollHeight;
+      if (autoScroll) chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
       scrollBtn.classList.toggle('show', !atBottom());
       /* Auto-scroll counts as "scrolling down" to the top-app-bar's hide
          behavior — the bar must not collapse just because a reply arrived.
@@ -1720,8 +1720,13 @@ function stage0Logic(wsUrl: string): string {
     });
     scrollBtn.addEventListener('click', () => {
       autoScroll = true;
-      chatLog.scrollTop = chatLog.scrollHeight;
-      scrollBtn.classList.remove('show');
+      chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
+      const hideWhenDone = () => {
+        scrollBtn.classList.remove('show');
+        chatLog.removeEventListener('scrollend', hideWhenDone);
+      };
+      chatLog.addEventListener('scrollend', hideWhenDone);
+      setTimeout(hideWhenDone, 500);
     });
 
     // ───────────── Bubbles (Stage 1: Markdown) ─────────────
