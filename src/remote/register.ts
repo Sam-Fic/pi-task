@@ -1,4 +1,9 @@
-import type {ExtensionAPI} from '@earendil-works/pi-coding-agent'
+import type {
+    ExtensionAPI,
+    ExtensionCommandContext,
+    ReadonlyFooterDataProvider
+} from '@earendil-works/pi-coding-agent'
+import {truncateToWidth, visibleWidth} from '@earendil-works/pi-tui'
 import {getConfig} from '../config/config.js'
 import {
     getBridge,
@@ -61,6 +66,9 @@ type Shared = {
      *  session switch — the sidebar's list and "current" marker read them. */
     cwd: string | null
     sessionPath: string | null
+    /** Prevent showing the QR overlay more than once per server lifetime. */
+    qrOverlayShown: boolean
+    remoteUrl: string | undefined
 }
 const _g = globalThis as unknown as Record<string, Shared | undefined>
 if (!_g.__piRemote)
@@ -70,7 +78,9 @@ if (!_g.__piRemote)
         serveResult: null,
         pi: null,
         cwd: null,
-        sessionPath: null
+        sessionPath: null,
+        qrOverlayShown: false,
+        remoteUrl: undefined
     }
 
 const S = _g.__piRemote!
@@ -243,50 +253,34 @@ export function registerRemote(pi: ExtensionAPI): void {
 
     pi.on('session_start', (_event, ctx) => {
         S.send = (text, opts) => (opts ? pi.sendUserMessage(text, opts) : pi.sendUserMessage(text))
-        // The sidebar's list scope and current-row marker. Optional-chained:
-        // test ctxs (and exotic hosts) may carry no sessionManager.
         S.cwd = ctx.sessionManager?.getCwd?.() ?? S.cwd
         S.sessionPath = ctx.sessionManager?.getSessionFile?.() ?? S.sessionPath
-        // A new session (incl. /new and the /task handoff's newSession) means the
-        // browser is showing a stale transcript/widgets — wipe the authoritative
-        // state and tell connected clients to clear.
         const bridge = getBridge()
         reset()
-        // Rebuild the transcript from the persisted session so a browser that
-        // connects after a pi restart (or a fork/switch to another session)
-        // sees the conversation instead of a blank page. A fresh /new has no
-        // message entries and seeds nothing.
         seedFromSession(ctx)
         setupEvents(pi)
-        // Mirror held mid-run input into the browser composer.
         setHeldInputListener(() => setHeld(heldInput(), isRunActive()))
-        // Ensure a usable ctx so browser-initiated commands work without any
-        // terminal interaction. An event ctx has NO switchSession/newSession —
-        // pi only builds those for command dispatch — so a shimmed ctx alone
-        // can't drive the sidebar's session switch. When the stored ctx is
-        // missing, a shim, or invalidated (any session replacement invalidates
-        // the old runner), seed a shim for the commands that need nothing more
-        // and immediately upgrade: fire the no-op bootstrap command through
-        // prompt()'s dispatch path so registerBridgeCommand captures a real,
-        // command-capable ctx for this generation.
         if (!isCtxUsable(bridge.currentCtx)) {
             bridge.currentCtx = makeShimmedCtx(ctx)
             if (getConfig().remote) {
-                // Fire-and-forget: prompt() runs the command dispatch first and
-                // returns before ever opening a turn; async failures are routed
-                // to the host's emitError by the runtime's own wrapper.
                 pi.sendUserMessage(`/${CTX_BOOTSTRAP_COMMAND}`, {expandPromptTemplates: true})
             }
         }
-        // Keep open browsers' pickers fresh: a new session re-seeds the ctx the
-        // catalogue is read from (and /new can run while the server is up).
         broadcastModels()
         if (getConfig().remote) {
-            // Optional feature: a bind failure must never take pi down. Degrade
-            // to a one-line warning and keep the agent running without remote.
-            void ensureServer().catch(err =>
-                notifyBoth(ctx, `Remote UI unavailable: ${(err as Error).message}`, 'warning')
-            )
+            void ensureServer()
+                .then(server => {
+                    if (!S.qrOverlayShown) {
+                        S.qrOverlayShown = true
+                        const url = `http://${server.ip}:${server.port}`
+                        S.remoteUrl = url
+                        ctx.ui.setFooter(createRemoteFooterFactory(ctx))
+                        notifyBoth(ctx, `Remote running at ${url}`, 'info')
+                    }
+                })
+                .catch(err =>
+                    notifyBoth(ctx, `Remote UI unavailable: ${(err as Error).message}`, 'warning')
+                )
         }
     })
 
@@ -297,6 +291,9 @@ export function registerRemote(pi: ExtensionAPI): void {
                 S.server.stop()
                 S.server = null
                 S.serveResult = null
+                S.qrOverlayShown = false
+                S.remoteUrl = undefined
+                _ctx.ui.setFooter(undefined)
                 void teardownTailscaleServe(port).catch(() => {})
             }
             S.send = null
@@ -333,6 +330,9 @@ export function registerRemote(pi: ExtensionAPI): void {
                     S.server.stop()
                     S.server = null
                     S.serveResult = null
+                    S.qrOverlayShown = false
+                    S.remoteUrl = undefined
+                    ctx.ui.setFooter(undefined)
                     void teardownTailscaleServe(port).catch(() => {})
                     notifyBoth(ctx, 'Remote server stopped', 'info')
                 } else {
@@ -346,67 +346,181 @@ export function registerRemote(pi: ExtensionAPI): void {
 
             try {
                 const server = await ensureServer()
-
-                const httpPrimary = `http://${server.ip}:${server.port}`
-                const result: ServeResult = S.serveResult ?? {state: 'unavailable'}
-                const plan = planRemoteUrls(httpPrimary, result, server.port)
-                const primaryUrl = plan.primaryUrl
-                const qr = await qrLines(primaryUrl)
-
-                const tsHost = hostFromResult(result)
-                const addrs = [
-                    ...plan.urlLines,
-                    ...formatAddresses(server.ips, server.port, tsHost)
-                ]
-                const labelW = addrs.reduce((m, a) => Math.max(m, a.label.length), 0)
-                const addrLines = [
-                    ...addrs.map(a => (a.label ? `${a.label.padEnd(labelW)}  ${a.url}` : a.url)),
-                    ...plan.hintLines
-                ]
-                const addrWidth = addrLines.reduce((m, l) => Math.max(m, l.length), 0)
-
-                if (ctx.mode === 'tui') {
-                    // eslint-disable-next-line no-control-regex -- strip ANSI SGR escapes to measure visible width
-                    const stripAnsi = (s: string) => s.replace(/\x1b\[[^m]*m/g, '')
-                    const visWidth = qr.reduce((max, l) => Math.max(max, stripAnsi(l).length), 0)
-                    const overlayWidth = Math.max(visWidth, addrWidth + 4, 36)
-
-                    ctx.ui
-                        .custom<void>(
-                            (_tui, _theme, _kb, done) => ({
-                                focused: false,
-                                render: w => {
-                                    const c = (s: string, len: number) =>
-                                        ' '.repeat(Math.max(0, Math.floor((w - len) / 2))) + s
-                                    return [
-                                        '',
-                                        ...qr.map(l => c(l, visWidth)),
-                                        '',
-                                        ...addrLines.map(l => c(l, addrWidth)),
-                                        '',
-                                        c('Waiting for connection…', 23),
-                                        c('(any key to dismiss)', 20)
-                                    ]
-                                },
-                                handleInput: () => done(undefined),
-                                invalidate: () => {},
-                                dispose: () => done(undefined)
-                            }),
-                            {
-                                overlay: true,
-                                overlayOptions: {width: overlayWidth},
-                                onHandle: h => {
-                                    server.onFirstConnect = () => h.hide()
-                                }
-                            }
-                        )
-                        .catch(() => {})
-                }
-
-                notifyBoth(ctx, `Remote running at ${primaryUrl}`, 'info')
+                const url = `http://${server.ip}:${server.port}`
+                S.remoteUrl = url
+                ctx.ui.setFooter(createRemoteFooterFactory(ctx))
+                await showRemoteQrOverlay(ctx, server, S.serveResult ?? {state: 'unavailable'})
+                notifyBoth(ctx, `Remote running at ${url}`, 'info')
             } catch (err) {
                 notifyBoth(ctx, `Remote UI unavailable: ${(err as Error).message}`, 'error')
             }
         }
     })
+}
+
+function createRemoteFooterFactory(
+    ctx: Pick<
+        ExtensionCommandContext,
+        'ui' | 'mode' | 'sessionManager' | 'model' | 'getContextUsage'
+    >
+): (
+    tui: unknown,
+    theme: unknown,
+    footerData: ReadonlyFooterDataProvider
+) => {render(width: number): string[]; dispose(): void; invalidate(): void} {
+    const initialCwd = ctx.sessionManager?.getCwd?.() ?? ''
+    const initialSessionName = ctx.sessionManager?.getSessionName?.() ?? undefined
+    const initialModel = ctx.model
+
+    return (_tui: unknown, theme: unknown, footerData: ReadonlyFooterDataProvider) => {
+        const t = theme as {fg(color: string, text: string): string; bold(text: string): string}
+        const fmt = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`)
+
+        function render(width: number): string[] {
+            // Line 0: pwd (git) • session
+            let pwd = initialCwd
+            const home = process.env.HOME || process.env.USERPROFILE
+            if (home && pwd.startsWith(home)) {
+                pwd = pwd === home ? '~' : `~${pwd.slice(home.length)}`
+            }
+            const branch = footerData.getGitBranch()
+            if (branch) pwd = `${pwd} (${branch})`
+            if (initialSessionName) pwd = `${pwd} • ${initialSessionName}`
+            const pwdLine = truncateToWidth(t.fg('dim', pwd), width, t.fg('dim', '...'))
+
+            // Line 1: stats + model (right-aligned)
+            const modelName = initialModel?.id || 'no-model'
+            const ctxUsage = ctx.getContextUsage?.()
+            const contextWindow = ctxUsage?.contextWindow ?? initialModel?.contextWindow ?? 0
+            const contextPercent =
+                ctxUsage?.percent !== null && ctxUsage?.percent !== undefined ?
+                    ctxUsage.percent.toFixed(1)
+                :   '?'
+            const contextPercentDisplay =
+                contextPercent === '?' ?
+                    `?/${fmt(contextWindow)}`
+                :   `${contextPercent}%/${fmt(contextWindow)}`
+            let contextPercentStr: string
+            if ((ctxUsage?.percent ?? 0) > 90)
+                contextPercentStr = t.fg('error', contextPercentDisplay)
+            else if ((ctxUsage?.percent ?? 0) > 70)
+                contextPercentStr = t.fg('warning', contextPercentDisplay)
+            else contextPercentStr = contextPercentDisplay
+            const statsLeft = contextPercentStr
+
+            const rightSide = modelName
+            const leftWidth = visibleWidth(statsLeft)
+            const rightWidth = visibleWidth(rightSide)
+            const statsLine =
+                leftWidth + rightWidth <= width ?
+                    statsLeft + ' '.repeat(width - leftWidth - rightWidth) + rightSide
+                :   truncateToWidth(statsLeft, width, '...')
+
+            const dimStatsLeft = t.fg('dim', statsLeft)
+            const remainder = statsLine.slice(statsLeft.length)
+            const dimRemainder = t.fg('dim', remainder)
+
+            // Line 2: extension statuses with remote URL right-aligned
+            const extensionStatuses = footerData.getExtensionStatuses()
+            let statusLine = ''
+            if (extensionStatuses.size > 0) {
+                const others = Array.from(extensionStatuses.entries())
+                    .filter(([k]: [string, string]) => k !== 'remote')
+                    .sort(([a]: [string, string], [b]: [string, string]) => a.localeCompare(b))
+                    .map(([, text]: [string, string]) =>
+                        text
+                            .replace(/[\r\n\t]/g, ' ')
+                            .replace(/ +/g, ' ')
+                            .trim()
+                    )
+                    .join(' ')
+                const remoteText = extensionStatuses.get('remote')
+                const remote =
+                    remoteText ?
+                        remoteText
+                            .replace(/[\r\n\t]/g, ' ')
+                            .replace(/ +/g, ' ')
+                            .trim()
+                    :   ''
+                if (remote && others) {
+                    const leftW = visibleWidth(others)
+                    const rightW = visibleWidth(remote)
+                    const pad = ' '.repeat(Math.max(1, width - leftW - rightW))
+                    statusLine = truncateToWidth(others + pad + remote, width, t.fg('dim', '...'))
+                } else if (others) {
+                    statusLine = truncateToWidth(others, width, t.fg('dim', '...'))
+                } else if (remote) {
+                    statusLine = truncateToWidth(remote, width, t.fg('dim', '...'))
+                }
+            }
+
+            const lines = [pwdLine, dimStatsLeft + dimRemainder]
+            if (statusLine) lines.push(statusLine)
+            return lines
+        }
+
+        return {
+            render,
+            dispose() {},
+            invalidate() {}
+        }
+    }
+}
+
+async function showRemoteQrOverlay(
+    ctx: Pick<ExtensionCommandContext, 'ui' | 'mode'>,
+    server: ServerHandle,
+    result: ServeResult
+): Promise<void> {
+    const httpPrimary = `http://${server.ip}:${server.port}`
+    const plan = planRemoteUrls(httpPrimary, result, server.port)
+    const primaryUrl = plan.primaryUrl
+    const qr = await qrLines(primaryUrl)
+
+    const tsHost = hostFromResult(result)
+    const addrs = [...plan.urlLines, ...formatAddresses(server.ips, server.port, tsHost)]
+    const labelW = addrs.reduce((m, a) => Math.max(m, a.label.length), 0)
+    const addrLines = [
+        ...addrs.map(a => (a.label ? `${a.label.padEnd(labelW)}  ${a.url}` : a.url)),
+        ...plan.hintLines
+    ]
+    const addrWidth = addrLines.reduce((m, l) => Math.max(m, l.length), 0)
+
+    if (ctx.mode === 'tui') {
+        // eslint-disable-next-line no-control-regex -- strip ANSI SGR escapes to measure visible width
+        const stripAnsi = (s: string) => s.replace(/\x1b\[[^m]*m/g, '')
+        const visWidth = qr.reduce((max, l) => Math.max(max, stripAnsi(l).length), 0)
+        const overlayWidth = Math.max(visWidth, addrWidth + 4, 36)
+
+        await ctx.ui
+            .custom<void>(
+                (_tui, _theme, _kb, done) => ({
+                    focused: false,
+                    render: w => {
+                        const c = (s: string, len: number) =>
+                            ' '.repeat(Math.max(0, Math.floor((w - len) / 2))) + s
+                        return [
+                            '',
+                            ...qr.map(l => c(l, visWidth)),
+                            '',
+                            ...addrLines.map(l => c(l, addrWidth)),
+                            '',
+                            c('Waiting for connection…', 23),
+                            c('(any key to dismiss)', 20)
+                        ]
+                    },
+                    handleInput: () => done(undefined),
+                    invalidate: () => {},
+                    dispose: () => done(undefined)
+                }),
+                {
+                    overlay: true,
+                    overlayOptions: {width: overlayWidth},
+                    onHandle: h => {
+                        server.onFirstConnect = () => h.hide()
+                    }
+                }
+            )
+            .catch(() => {})
+    }
 }
