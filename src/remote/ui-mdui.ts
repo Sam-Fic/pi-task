@@ -1079,7 +1079,7 @@ mdui-list#notif-list {
        the send capsule (5.25) — the panel matches the input's width, not the
        full footer row that also contains the send button. */
     left: var(--col-pad);
-    right: var(--col-pad);
+    right: calc(var(--col-pad) + 0.5rem + 5.25rem);
     margin-bottom: 0.25rem;
     background: rgb(var(--mdui-color-surface-container-high));
     border-radius: var(--mdui-shape-corner-extra-large);
