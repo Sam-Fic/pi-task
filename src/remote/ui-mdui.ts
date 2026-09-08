@@ -1068,19 +1068,40 @@ mdui-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Cmd suggestions: an m3e-menu anchored above the input bar (see #cmd-menu
-   in the markup), fed by the same two-line recipe (.model-row-*) as the
-   model menu. Shape, padding and line metrics are the component's defaults;
-   only the theme tokens are mapped, plus one rule that paints the keyboard
-   -highlighted row exactly like the component's own expanded state layer. */
-#cmd-menu {
-    --m3e-menu-container-color: rgb(var(--mdui-color-surface-container-high));
-    --m3e-menu-container-elevation: var(--mdui-elevation-level3);
+/* Cmd suggestions (above input). Same 28px family as the notif/model panels.
+   Rows are inset 0.5rem and rounded 1.25rem (mdui-list-item's native
+   "rounded" attribute, whose state layer follows the token) — concentric
+   with the panel exactly like the model menu: 28 − 8 = 20. */
+#cmd-suggestions {
+    position: absolute;
+    bottom: 100%;
+    /* Right edge stops where the text field stops: composer gap (0.5) plus
+       the send capsule (5.25) — the panel matches the input's width, not the
+       full footer row that also contains the send button. */
+    left: var(--col-pad);
+    right: var(--col-pad);
+    margin-bottom: 0.25rem;
+    background: rgb(var(--mdui-color-surface-container-high));
+    border-radius: var(--mdui-shape-corner-extra-large);
+    box-shadow: var(--mdui-elevation-level2);
+    overflow: hidden;
+    display: none;
+    max-height: 14rem;
+    overflow-y: auto;
+    padding: 0.5rem;
+    box-sizing: border-box;
 }
-#cmd-menu m3e-menu-item.hl {
-    background-color: rgb(var(--mdui-color-on-surface) / 0.08);
-    border-radius: var(--m3e-menu-item-shape, var(--m3e-shape-corner-extra-small, 4px));
+#cmd-suggestions mdui-list { padding: 0; }
+#cmd-suggestions mdui-list-item {
+    cursor: pointer;
+    font-size: 0.9rem;
+    --shape-corner-rounded: 1.25rem;
+    /* Same two-line recipe as the model menu: bold name, regular detail.
+       The shadow parts read these typescale tokens from the host. */
+    --mdui-typescale-body-large-weight: 600;
+    --mdui-typescale-body-medium-weight: 400;
 }
+#cmd-suggestions mdui-list-item + mdui-list-item { margin-top: 0.1rem; }
 
 /* Scroll-to-bottom (mdui-fab) */
 m3e-fab#scroll-bottom {
@@ -1295,6 +1316,7 @@ export function mduiHtml(wsUrl: string): string {
     </div>
 
     <footer id="input-bar" style="position:relative;">
+      <div id="cmd-suggestions"></div>
       <mdui-text-field id="input" variant="filled" autosize min-rows="1" max-rows="6"
         placeholder="输入消息（/ 查看命令）…" disabled></mdui-text-field>
       <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
@@ -1339,12 +1361,6 @@ export function mduiHtml(wsUrl: string): string {
        re-renders the tick — no optimistic check, so a rejected switch can't
        leave the menu lying. -->
   <m3e-menu id="model-menu" aria-label="切换模型"></m3e-menu>
-
-  <!-- Command suggestions (m3e-menu): anchored above the input bar and shown
-       programmatically while the text starts with "/" — the same component
-       and two-line row recipe as the model menu, so shape, padding and line
-       metrics stay the library defaults. -->
-  <m3e-menu id="cmd-menu" position-y="above" aria-label="命令"></m3e-menu>
 
   <!-- Prompt dialog: shown when pi asks for user input -->
   <mdui-dialog id="prompt-card" close-on-esc headline="π 需要你的输入">
@@ -1399,8 +1415,7 @@ function stage0Logic(wsUrl: string): string {
     const settingsBtn  = document.getElementById('settings-btn');
     const settingsPanel= document.getElementById('settings-panel');
     const themeSeg     = document.getElementById('theme-seg');
-    const cmdMenu = document.getElementById('cmd-menu');
-    const inputBar = document.getElementById('input-bar');
+    const cmdSuggestions = document.getElementById('cmd-suggestions');
     const scrollBtn    = document.getElementById('scroll-bottom');
     const heldBar      = document.getElementById('held-bar');
     const heldLabel    = document.getElementById('held-label');
@@ -1696,6 +1711,10 @@ function stage0Logic(wsUrl: string): string {
       return { paint };
     }
     attachScrollbar(chatLog, document.getElementById('chat-wrap'));
+    // The command panel is the rounded card: 28px corner - 2.5px cap = 25.5px
+    // on both axes, so the thumb's end caps sit concentric with its corners.
+    const cmdScrollbar = attachScrollbar(cmdSuggestions, document.getElementById('input-bar'),
+      { inset: 25.5, rightInset: 25.5 });
     attachScrollbar(notifList, notifPanel);
 
     // ───────────── Scroll tracking ─────────────
@@ -2376,31 +2395,24 @@ function stage0Logic(wsUrl: string): string {
       renderSuggestions();
     }
     function renderSuggestions() {
-      cmdMenu.innerHTML = '';
-      if (!cmdActive.length) {
-        if (cmdMenu.isOpen) cmdMenu.hide();
-        return;
-      }
+      cmdSuggestions.innerHTML = '';
+      if (!cmdActive.length) { cmdSuggestions.style.display = 'none'; return; }
+      cmdSuggestions.style.display = 'block';
+      const list = document.createElement('mdui-list');
       cmdActive.forEach((cmd, i) => {
-        const el = document.createElement('m3e-menu-item');
-        if (i === cmdIndex) el.classList.add('hl');
-        // Same two-line row as the model menu: the item lays its default slot
-        // out as a flex row, so one block wrapper stacks name over desc.
-        const main = document.createElement('span');
-        main.className = 'model-row-main';
-        const name = document.createElement('span');
-        name.className = 'model-row-name';
-        name.textContent = cmd.name;
-        const desc = document.createElement('span');
-        desc.className = 'model-row-spec';
-        desc.textContent = cmd.desc;
-        main.append(name, desc);
-        el.appendChild(main);
-        // mousedown (not click) so the input keeps focus while picking.
+        const el = document.createElement('mdui-list-item');
+        // mdui's native rounded variant: the row (and its ripple/state
+        // layer) becomes a rounded rect inset from the panel — the model
+        // menu's recipe, not a full-bleed highlight.
+        el.setAttribute('rounded', '');
+        if (i === cmdIndex) el.setAttribute('active', '');
+        el.setAttribute('headline', cmd.name);
+        el.setAttribute('description', cmd.desc);
         el.addEventListener('mousedown', (e) => { e.preventDefault(); pickCmd(i); });
-        cmdMenu.appendChild(el);
+        list.appendChild(el);
       });
-      if (!cmdMenu.isOpen) cmdMenu.show(inputBar).catch(() => {});
+      cmdSuggestions.appendChild(list);
+      if (cmdScrollbar) cmdScrollbar.paint();
     }
     function pickCmd(i) {
       const cmd = cmdActive[i];
