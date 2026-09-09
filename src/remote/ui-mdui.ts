@@ -44,6 +44,8 @@ const MDUI_CSS = `https://cdn.jsdelivr.net/npm/mdui@${MDUI_VERSION}/mdui.css`
 const BUNDLE_IMPORTS = `
     import {
         setTheme,
+        setColorScheme,
+        removeColorScheme,
         snackbar,
     } from '${MDUI_BUNDLE}';
 `
@@ -100,30 +102,49 @@ m3e-icon-button#send-btn.armed {
        terminal-style output. Everything else sets no font-family at all
        and rides the browser's system default. */
     --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-    /* Bridge the MD tokens the m3e buttons consume onto the mdui palette,
-       so both libraries follow one theme (light/dark included). m3e's own
-       DesignToken.color.* resolve to var(--md-sys-color-…), so every token a
-       mounted component reads must appear here — the sidebar's drawer and
-       nav-menu additionally consume surface, surface-container-low, outline
-       and scrim. */
+    /* Bridge the MD tokens the m3e components consume onto the mdui palette,
+       so both libraries follow one theme (light/dark AND accent included).
+       m3e's DesignToken.color.* resolve to var(--md-sys-color-…), so every
+       role any mounted component might read must appear here — e.g. the
+       selected tonal button's container is "secondary", menus sit on
+       "surface-container-high", press ripples/scrim use "scrim". A role left
+       out here silently freezes that surface on the token's fallback and it
+       stops following the accent seed. */
+    --md-sys-color-background: rgb(var(--mdui-color-background));
+    --md-sys-color-on-background: rgb(var(--mdui-color-on-background));
     --md-sys-color-primary: rgb(var(--mdui-color-primary));
     --md-sys-color-on-primary: rgb(var(--mdui-color-on-primary));
     --md-sys-color-primary-container: rgb(var(--mdui-color-primary-container));
     --md-sys-color-on-primary-container: rgb(var(--mdui-color-on-primary-container));
+    --md-sys-color-secondary: rgb(var(--mdui-color-secondary));
+    --md-sys-color-on-secondary: rgb(var(--mdui-color-on-secondary));
     --md-sys-color-secondary-container: rgb(var(--mdui-color-secondary-container));
     --md-sys-color-on-secondary-container: rgb(var(--mdui-color-on-secondary-container));
+    --md-sys-color-tertiary: rgb(var(--mdui-color-tertiary));
+    --md-sys-color-on-tertiary: rgb(var(--mdui-color-on-tertiary));
     --md-sys-color-tertiary-container: rgb(var(--mdui-color-tertiary-container));
     --md-sys-color-on-tertiary-container: rgb(var(--mdui-color-on-tertiary-container));
     --md-sys-color-error: rgb(var(--mdui-color-error));
     --md-sys-color-on-error: rgb(var(--mdui-color-on-error));
     --md-sys-color-error-container: rgb(var(--mdui-color-error-container));
     --md-sys-color-on-error-container: rgb(var(--mdui-color-on-error-container));
+    --md-sys-color-surface: rgb(var(--mdui-color-surface));
+    --md-sys-color-surface-variant: rgb(var(--mdui-color-surface-variant));
     --md-sys-color-on-surface: rgb(var(--mdui-color-on-surface));
     --md-sys-color-on-surface-variant: rgb(var(--mdui-color-on-surface-variant));
-    --md-sys-color-surface: rgb(var(--mdui-color-surface));
+    --md-sys-color-surface-dim: rgb(var(--mdui-color-surface-dim));
+    --md-sys-color-surface-bright: rgb(var(--mdui-color-surface-bright));
+    --md-sys-color-surface-container-lowest: rgb(var(--mdui-color-surface-container-lowest));
     --md-sys-color-surface-container-low: rgb(var(--mdui-color-surface-container-low));
+    --md-sys-color-surface-container: rgb(var(--mdui-color-surface-container));
+    --md-sys-color-surface-container-high: rgb(var(--mdui-color-surface-container-high));
     --md-sys-color-surface-container-highest: rgb(var(--mdui-color-surface-container-highest));
     --md-sys-color-outline: rgb(var(--mdui-color-outline));
+    --md-sys-color-outline-variant: rgb(var(--mdui-color-outline-variant));
+    --md-sys-color-inverse-surface: rgb(var(--mdui-color-inverse-surface));
+    --md-sys-color-inverse-on-surface: rgb(var(--mdui-color-inverse-on-surface));
+    --md-sys-color-inverse-primary: rgb(var(--mdui-color-inverse-primary));
+    --md-sys-color-shadow: rgb(var(--mdui-color-shadow));
     --md-sys-color-scrim: rgb(var(--mdui-color-scrim));
 }
 html, body {
@@ -898,8 +919,10 @@ m3e-icon-button#send-btn.armed {
 }
 #reconnect-overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.6);
-    color: white; font-weight: 500;
+    /* Scrim is M3-black by design; its text is always white — the only
+       non-token pair here, deliberate per the M3 scrim spec. */
+    background: rgb(var(--mdui-color-scrim) / 0.6);
+    color: #fff; font-weight: 500;
     display: none;
     align-items: center; justify-content: center;
     z-index: 200;
@@ -1025,6 +1048,24 @@ mdui-card#status-panel {
 .settings-row { gap: 0.5rem; }
 #settings-title { font-weight: 600; }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
+
+/* Theme-color picker: circular seed-color dots. Each dot shows its literal
+   seed — a swatch is the one place a hardcoded color is the content, not
+   the chrome. The selection ring re-reads the live primary token, so it
+   follows whichever theme is currently applied. */
+#accent-list { display: flex; align-items: center; gap: 0.4rem; }
+.accent-dot {
+    flex: none;
+    width: 1.35rem; height: 1.35rem;
+    padding: 0; border: none; border-radius: 50%;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgb(var(--mdui-color-outline) / 0.5);
+    transition: box-shadow 150ms;
+}
+.accent-dot.selected {
+    box-shadow: 0 0 0 2px rgb(var(--mdui-color-surface-container-high)),
+                0 0 0 3.5px rgb(var(--mdui-color-primary));
+}
 
 mdui-list#notif-list {
     overflow-y: auto; flex: 1;
@@ -1353,6 +1394,18 @@ export function mduiHtml(wsUrl: string): string {
         <m3e-button variant="tonal" toggle data-value="auto" selected>自动</m3e-button>
       </m3e-button-group>
     </div>
+    <div class="settings-row">
+      <span>主题色</span>
+      <div id="accent-list" role="radiogroup" aria-label="主题色">
+        <button type="button" class="accent-dot" data-accent="" style="background:#6750A4" title="默认" aria-label="默认"></button>
+        <button type="button" class="accent-dot" data-accent="#1E88E5" style="background:#1E88E5" title="蓝色" aria-label="蓝色"></button>
+        <button type="button" class="accent-dot" data-accent="#00897B" style="background:#00897B" title="青色" aria-label="青色"></button>
+        <button type="button" class="accent-dot" data-accent="#43A047" style="background:#43A047" title="绿色" aria-label="绿色"></button>
+        <button type="button" class="accent-dot" data-accent="#EF6C00" style="background:#EF6C00" title="橙色" aria-label="橙色"></button>
+        <button type="button" class="accent-dot" data-accent="#D32F2F" style="background:#D32F2F" title="红色" aria-label="红色"></button>
+        <button type="button" class="accent-dot" data-accent="#7B1FA2" style="background:#7B1FA2" title="紫色" aria-label="紫色"></button>
+      </div>
+    </div>
     <div id="thinking-collapse-row">
       <span>Thinking 自动收起</span>
       <mdui-switch id="thinking-collapse"></mdui-switch>
@@ -1567,6 +1620,38 @@ function stage0Logic(wsUrl: string): string {
       localStorage.setItem('pi-task-theme', next);
       showToast(next === 'auto' ? '跟随系统深浅色' : next === 'dark' ? '已切换为深色模式' : '已切换为浅色模式', 'info');
     });
+
+    // ───────────── Accent color (in #settings-panel) ─────────────
+    // Preset seed dots drive mdui's setColorScheme, which regenerates the
+    // full M3 tonal palette for BOTH light and dark from one seed; an empty
+    // seed calls removeColorScheme to restore the stock baseline. The
+    // --md-sys-color-* bridge on :root reads --mdui-color-*, so every m3e
+    // component follows automatically. The seed persists and is re-applied
+    // on boot before first paint of the chat surface.
+    const accentList = document.getElementById('accent-list');
+    const accentDots = accentList ? Array.from(accentList.querySelectorAll('.accent-dot')) : [];
+    const applyAccent = (seed, persist) => {
+      if (seed) setColorScheme(seed); else removeColorScheme();
+      for (const d of accentDots) d.classList.toggle('selected', (d.getAttribute('data-accent') || '') === seed);
+      if (persist) localStorage.setItem('pi-task-accent', seed);
+    };
+    applyAccent(localStorage.getItem('pi-task-accent') || '', false);
+    if (accentList) accentList.addEventListener('click', (e) => {
+      const dot = e.target instanceof Element && e.target.closest ? e.target.closest('.accent-dot') : null;
+      if (!dot || !accentList.contains(dot)) return;
+      applyAccent(dot.getAttribute('data-accent') || '', true);
+    });
+    // The mobile browser chrome (address bar / task switcher tile) tints from
+    // <meta name="theme-color"> — keep it on the seed too, default = baseline.
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+      const applyThemeColor = (seed) => { themeColorMeta.setAttribute('content', seed || '#6750a4'); };
+      applyThemeColor(localStorage.getItem('pi-task-accent') || '');
+      if (accentList) accentList.addEventListener('click', (e) => {
+        const dot = e.target instanceof Element && e.target.closest ? e.target.closest('.accent-dot') : null;
+        if (dot && accentList.contains(dot)) applyThemeColor(dot.getAttribute('data-accent') || '');
+      });
+    }
 
     // ───────────── Status ─────────────
     function fmtTokens(n) {
