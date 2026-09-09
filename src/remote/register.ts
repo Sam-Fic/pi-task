@@ -1,9 +1,7 @@
 import type {
     ExtensionAPI,
-    ExtensionCommandContext,
-    ReadonlyFooterDataProvider
+    ExtensionCommandContext
 } from '@earendil-works/pi-coding-agent'
-import {truncateToWidth, visibleWidth} from '@earendil-works/pi-tui'
 import {getConfig} from '../config/config.js'
 import {
     getBridge,
@@ -274,7 +272,7 @@ export function registerRemote(pi: ExtensionAPI): void {
                         S.qrOverlayShown = true
                         const url = `http://${server.ip}:${server.port}`
                         S.remoteUrl = url
-                        ctx.ui.setFooter(createRemoteFooterFactory(ctx))
+                        ctx.ui.setStatus('remote', url)
                         notifyBoth(ctx, `Remote running at ${url}`, 'info')
                     }
                 })
@@ -293,7 +291,7 @@ export function registerRemote(pi: ExtensionAPI): void {
                 S.serveResult = null
                 S.qrOverlayShown = false
                 S.remoteUrl = undefined
-                _ctx.ui.setFooter(undefined)
+                _ctx.ui.setStatus('remote', '')
                 void teardownTailscaleServe(port).catch(() => {})
             }
             S.send = null
@@ -332,7 +330,7 @@ export function registerRemote(pi: ExtensionAPI): void {
                     S.serveResult = null
                     S.qrOverlayShown = false
                     S.remoteUrl = undefined
-                    ctx.ui.setFooter(undefined)
+                    ctx.ui.setStatus('remote', '')
                     void teardownTailscaleServe(port).catch(() => {})
                     notifyBoth(ctx, 'Remote server stopped', 'info')
                 } else {
@@ -348,7 +346,7 @@ export function registerRemote(pi: ExtensionAPI): void {
                 const server = await ensureServer()
                 const url = `http://${server.ip}:${server.port}`
                 S.remoteUrl = url
-                ctx.ui.setFooter(createRemoteFooterFactory(ctx))
+                ctx.ui.setStatus('remote', url)
                 await showRemoteQrOverlay(ctx, server, S.serveResult ?? {state: 'unavailable'})
                 notifyBoth(ctx, `Remote running at ${url}`, 'info')
             } catch (err) {
@@ -358,114 +356,6 @@ export function registerRemote(pi: ExtensionAPI): void {
     })
 }
 
-function createRemoteFooterFactory(
-    ctx: Pick<
-        ExtensionCommandContext,
-        'ui' | 'mode' | 'sessionManager' | 'model' | 'getContextUsage'
-    >
-): (
-    tui: unknown,
-    theme: unknown,
-    footerData: ReadonlyFooterDataProvider
-) => {render(width: number): string[]; dispose(): void; invalidate(): void} {
-    const initialCwd = ctx.sessionManager?.getCwd?.() ?? ''
-    const initialSessionName = ctx.sessionManager?.getSessionName?.() ?? undefined
-    const initialModel = ctx.model
-
-    return (_tui: unknown, theme: unknown, footerData: ReadonlyFooterDataProvider) => {
-        const t = theme as {fg(color: string, text: string): string; bold(text: string): string}
-        const fmt = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`)
-
-        function render(width: number): string[] {
-            // Line 0: pwd (git) • session
-            let pwd = initialCwd
-            const home = process.env.HOME || process.env.USERPROFILE
-            if (home && pwd.startsWith(home)) {
-                pwd = pwd === home ? '~' : `~${pwd.slice(home.length)}`
-            }
-            const branch = footerData.getGitBranch()
-            if (branch) pwd = `${pwd} (${branch})`
-            if (initialSessionName) pwd = `${pwd} • ${initialSessionName}`
-            const pwdLine = truncateToWidth(t.fg('dim', pwd), width, t.fg('dim', '...'))
-
-            // Line 1: stats + model (right-aligned)
-            const modelName = initialModel?.id || 'no-model'
-            const ctxUsage = ctx.getContextUsage?.()
-            const contextWindow = ctxUsage?.contextWindow ?? initialModel?.contextWindow ?? 0
-            const contextPercent =
-                ctxUsage?.percent !== null && ctxUsage?.percent !== undefined ?
-                    ctxUsage.percent.toFixed(1)
-                :   '?'
-            const contextPercentDisplay =
-                contextPercent === '?' ?
-                    `?/${fmt(contextWindow)}`
-                :   `${contextPercent}%/${fmt(contextWindow)}`
-            let contextPercentStr: string
-            if ((ctxUsage?.percent ?? 0) > 90)
-                contextPercentStr = t.fg('error', contextPercentDisplay)
-            else if ((ctxUsage?.percent ?? 0) > 70)
-                contextPercentStr = t.fg('warning', contextPercentDisplay)
-            else contextPercentStr = contextPercentDisplay
-            const statsLeft = contextPercentStr
-
-            const rightSide = modelName
-            const leftWidth = visibleWidth(statsLeft)
-            const rightWidth = visibleWidth(rightSide)
-            const statsLine =
-                leftWidth + rightWidth <= width ?
-                    statsLeft + ' '.repeat(width - leftWidth - rightWidth) + rightSide
-                :   truncateToWidth(statsLeft, width, '...')
-
-            const dimStatsLeft = t.fg('dim', statsLeft)
-            const remainder = statsLine.slice(statsLeft.length)
-            const dimRemainder = t.fg('dim', remainder)
-
-            // Line 2: extension statuses with remote URL right-aligned
-            const extensionStatuses = footerData.getExtensionStatuses()
-            let statusLine = ''
-            if (extensionStatuses.size > 0) {
-                const others = Array.from(extensionStatuses.entries())
-                    .filter(([k]: [string, string]) => k !== 'remote')
-                    .sort(([a]: [string, string], [b]: [string, string]) => a.localeCompare(b))
-                    .map(([, text]: [string, string]) =>
-                        text
-                            .replace(/[\r\n\t]/g, ' ')
-                            .replace(/ +/g, ' ')
-                            .trim()
-                    )
-                    .join(' ')
-                const remoteText = extensionStatuses.get('remote')
-                const remote =
-                    remoteText ?
-                        remoteText
-                            .replace(/[\r\n\t]/g, ' ')
-                            .replace(/ +/g, ' ')
-                            .trim()
-                    :   ''
-                if (remote && others) {
-                    const leftW = visibleWidth(others)
-                    const rightW = visibleWidth(remote)
-                    const pad = ' '.repeat(Math.max(1, width - leftW - rightW))
-                    statusLine = truncateToWidth(others + pad + remote, width, t.fg('dim', '...'))
-                } else if (others) {
-                    statusLine = truncateToWidth(others, width, t.fg('dim', '...'))
-                } else if (remote) {
-                    statusLine = truncateToWidth(remote, width, t.fg('dim', '...'))
-                }
-            }
-
-            const lines = [pwdLine, dimStatsLeft + dimRemainder]
-            if (statusLine) lines.push(statusLine)
-            return lines
-        }
-
-        return {
-            render,
-            dispose() {},
-            invalidate() {}
-        }
-    }
-}
 
 async function showRemoteQrOverlay(
     ctx: Pick<ExtensionCommandContext, 'ui' | 'mode'>,
