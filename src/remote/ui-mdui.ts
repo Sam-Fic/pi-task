@@ -2420,39 +2420,56 @@ function stage0Logic(wsUrl: string): string {
       const md = (d.getMonth() + 1) + '/' + d.getDate();
       return d.getFullYear() === now.getFullYear() ? md : d.getFullYear() + '/' + md;
     }
+    function syncSessionItem(it, s, cur) {
+      it._sessionPath = s.path;
+      it.querySelector('.s-title').textContent = s.name || s.firstMessage || '（空会话）';
+      it.querySelector('.s-sub').textContent = fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
+      // toggleAttribute is a no-op when unchanged: the freshly clicked item
+      // already carries native selected, so the indicator's grow animation
+      // is never restarted by a data refresh.
+      it.toggleAttribute('selected', !!cur);
+    }
     function renderSessions() {
       const sessions = sessionData.sessions || [];
       if (!sessions.length) {
         sessionList.innerHTML = '<div class="s-empty">还没有其他会话</div>';
         return;
       }
-      sessionList.innerHTML = '';
-      for (const s of sessions) {
-        const it = document.createElement('m3e-nav-menu-item');
-        const cur = s.path === sessionData.current;
-        if (cur) it.setAttribute('selected', '');
-        const ic = document.createElement('m3e-icon');
-        ic.slot = 'icon';
-        ic.setAttribute('name', 'history');
-        const label = document.createElement('span');
-        label.slot = 'label';
-        label.className = 's-label';
-        const title = document.createElement('span');
-        title.className = 's-title';
-        title.textContent = s.name || s.firstMessage || '（空会话）';
-        const sub = document.createElement('span');
-        sub.className = 's-sub';
-        sub.textContent = fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
-        label.append(title, sub);
-        it.append(ic, label);
-        it.addEventListener('click', () => {
-          drawer.start = false;
-          if (cur || !ws || ws.readyState !== 1) return;
-          ws.send(JSON.stringify({ type: 'switch_session', path: s.path }));
-          showToast('切换会话…', 'info');
-        });
-        sessionList.appendChild(it);
+      // Keyed in-place update: when the catalogue is unchanged (same paths,
+      // same order), sync text + selection on the existing items instead of
+      // rebuilding. Recreating the nodes re-mounts the selected item, which
+      // replays the indicator animation and flashes the whole row.
+      const existing = sessionList.querySelectorAll('m3e-nav-menu-item');
+      const sameOrder = existing.length === sessions.length
+        && [...existing].every((el, i) => el._sessionPath === sessions[i].path);
+      if (!sameOrder) {
+        sessionList.innerHTML = '';
+        for (const s of sessions) {
+          const it = document.createElement('m3e-nav-menu-item');
+          const ic = document.createElement('m3e-icon');
+          ic.slot = 'icon';
+          ic.setAttribute('name', 'history');
+          const label = document.createElement('span');
+          label.slot = 'label';
+          label.className = 's-label';
+          const title = document.createElement('span');
+          title.className = 's-title';
+          const sub = document.createElement('span');
+          sub.className = 's-sub';
+          label.append(title, sub);
+          it.append(ic, label);
+          it.addEventListener('click', () => {
+            drawer.start = false;
+            if (it.hasAttribute('selected') || !ws || ws.readyState !== 1) return;
+            ws.send(JSON.stringify({ type: 'switch_session', path: it._sessionPath }));
+            showToast('切换会话…', 'info');
+          });
+          syncSessionItem(it, s, s.path === sessionData.current);
+          sessionList.appendChild(it);
+        }
+        return;
       }
+      sessions.forEach((s, i) => syncSessionItem(existing[i], s, s.path === sessionData.current));
     }
     menuBtn.addEventListener('click', () => {
       drawer.start = true;
