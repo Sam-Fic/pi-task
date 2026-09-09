@@ -647,6 +647,10 @@ mdui-top-app-bar#top-bar .bar-stack { width: 100%; }
        box then share one font size, so each line box is exactly
        --_code-line and the capsule height stays exact. */
     font-size: 0.85em;
+    /* Long lines scroll inside the block (the container's overflow:hidden
+       would clip them for good). The header pill stays put: it is a child
+       of the non-scrolling container. Same pattern as headless pre/tables. */
+    overflow-x: auto;
 }
 /* Direct child only — a pre inside .code-block keeps its own zero-radius
    rule above and lets the container's clipping own the shape. */
@@ -1812,7 +1816,14 @@ function stage0Logic(wsUrl: string): string {
       return chatLog.scrollTop + chatLog.clientHeight >= chatLog.scrollHeight - 24;
     }
     function scrollBottom() {
-      if (autoScroll) chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
+      if (autoScroll) {
+        /* Instant jump, never smooth: deltas arrive faster than a smooth
+           animation converges, and the mid-flight lag trips the scroll
+           handler's atBottom() check, which disengages auto-scroll for the
+           rest of the stream. An exact jump keeps every scroll event at the
+           bottom, so the handler always re-confirms auto-scroll. */
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
       scrollBtn.classList.toggle('show', !atBottom());
       /* Auto-scroll counts as "scrolling down" to the top-app-bar's hide
          behavior — the bar must not collapse just because a reply arrived.
@@ -1827,6 +1838,14 @@ function stage0Logic(wsUrl: string): string {
       autoScroll = atBottom();
       scrollBtn.classList.toggle('show', !autoScroll);
     });
+    /* User intent beats the race where a queued delta task re-jumps to the
+       bottom before the scroll handler can see the user's upward scroll. */
+    const userScrollIntent = () => {
+      autoScroll = false;
+      scrollBtn.classList.toggle('show', !atBottom());
+    };
+    chatLog.addEventListener('wheel', userScrollIntent, {passive: true});
+    chatLog.addEventListener('touchmove', userScrollIntent, {passive: true});
     scrollBtn.addEventListener('click', () => {
       autoScroll = true;
       chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
@@ -2866,6 +2885,9 @@ function stage0Logic(wsUrl: string): string {
             if (streamText) {
               mountMarkdown(currentBubble, streamText);
               attachBubbleCopy(currentBubble, streamText);
+              /* Rendered markdown is usually taller than the streamed plain
+                 text: re-jump so the final layout still sits at the bottom. */
+              scrollBottom();
             }
             currentBubble = null; streamText = '';
           }
