@@ -133,6 +133,11 @@ html, body {
     background: rgb(var(--mdui-color-surface));
     color: rgb(var(--mdui-color-on-surface));
     font-family: system-ui, sans-serif;
+    /* Suppress the WebKit/Blink mobile tap flash on every tapped surface —
+       the property inherits, so one declaration here (rather than per
+       component) covers light DOM, slotted content and shadow trees alike.
+       Press feedback is already provided by each component's state layer. */
+    -webkit-tap-highlight-color: transparent;
 }
 /* Native scrollbars are hidden app-wide — scrolling surfaces get the
    custom .scroll-thumb overlay instead (see attachScrollbar in the client:

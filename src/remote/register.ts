@@ -1,7 +1,4 @@
-import type {
-    ExtensionAPI,
-    ExtensionCommandContext
-} from '@earendil-works/pi-coding-agent'
+import type {ExtensionAPI, ExtensionCommandContext} from '@earendil-works/pi-coding-agent'
 import {getConfig} from '../config/config.js'
 import {
     getBridge,
@@ -355,7 +352,6 @@ export function registerRemote(pi: ExtensionAPI): void {
         }
     })
 }
-
 
 async function showRemoteQrOverlay(
     ctx: Pick<ExtensionCommandContext, 'ui' | 'mode'>,
