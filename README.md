@@ -277,3 +277,76 @@ under the same license. Contributions are accepted under the
 [Contributor License Agreement](./CLA.md), which allows dual-licensing;
 for a commercial license that does not carry the AGPL's copyleft obligations,
 contact the author.
+
+---
+
+## Fork Changes — Sam-Fic/pi-task
+
+This fork diverges from [`mjasnikovs/pi-task`](https://github.com/mjasnikovs/pi-task)
+at the `v0.40.7` tag (merge base `4d151b2`). All 74 fork-only commits focus on a
+single goal: **replacing the legacy remote web UI with a Material 3 / mdui-based
+mobile-first interface**. Upstream docs-quality commits (v0.40.8–v0.40.18) have
+been merged in; they are not listed here.
+
+### What changed
+
+**Legacy UI removed, mdui UI built from scratch.**
+
+- Deleted `src/remote/ui.ts`, `ui-script.ts`, and `ui-styles.ts` (1,772 lines of
+  hand-rolled widgets). Added `src/remote/ui-mdui.ts` (3,025 lines) built on
+  [mdui 2.x](https://www.npmjs.com/package/mdui) and
+  [M3E components](https://matraic.github.io/m3e).
+- The new UI ships a scroll-to-collapse top app bar, a streaming context bar
+  that flattens at rest and waves while active, a capsule send button with
+  spring-rotation, and Material 3 Expressive color blocking.
+
+**Session management.**
+
+- Added `src/remote/sessions.ts` and `src/remote/backfill.ts` for switching
+  between persisted sessions and backfilling transcripts on reconnect.
+- A session sidebar lists all stored sessions; tapping one restores the full
+  transcript without a server round-trip.
+
+**Model picker, theme picker, and command suggestions.**
+
+- The app-bar name opens a model-picker dropdown built on `m3e-menu`.
+- A theme picker renders as a connected `m3e-button-group` with tonal variants
+  and an accent color picker that completes the MD3 token mapping.
+- Command suggestions are an anchored `m3e-menu` aligned to the input width.
+
+**Visual rhythm and shape system.**
+
+- Concentric bubble corners (outer radius = inner radius + gap) across all
+  surfaces — message bubbles, code blocks, thinking/tool cards.
+- Code blocks share one code-line rhythm; single-line blocks collapse to exact
+  capsule shapes. Wide markdown tables scroll inside the bubble.
+- Thinking and tool-call cards use an exact capsule radius and auto-collapse
+  when finished.
+
+**Scrollbar, FAB, and polish.**
+
+- Custom overlay scroll thumb replaces native scrollbars; scrollbar caps land
+  on the command panel's corner centers.
+- Scroll-to-bottom FAB sits in `tertiary-container` with a smooth rotation
+  animation; the initial rotation angle is tuned for the resting state.
+- A QR overlay showing the remote URL appears on startup.
+
+**Robustness.**
+
+- A throwing WebSocket handler degrades to a toast instead of crashing the
+  process (`uncaughtException`).
+- The context progress bar works even when the m3e CDN fails.
+- Model switching targets the current pi instance, not the one the server
+  captured at startup.
+- A fresh command context is bootstrapped so brand-new sessions can switch
+  models immediately.
+
+### Files touched (fork-only, 65 total)
+
+| Area | Files | Key changes |
+| --- | --- | --- |
+| **Remote UI** | `src/remote/ui-mdui.ts` (new, +3,025), `ui-render.ts`, `ui.ts` / `ui-script.ts` / `ui-styles.ts` (removed) | Full UI rewrite on mdui + M3E |
+| **Session management** | `src/remote/sessions.ts` (new), `backfill.ts` (new), `history.ts`, `protocol.ts`, `register.ts`, `server.ts`, `bridge.ts` | Persisted session switching, transcript backfill, protocol extensions |
+| **Remote tests** | `test/remote/*.test.ts` (8 files, +860 lines) | Coverage for backfill, sessions, protocol, server, register-server, bridge |
+| **Config / tooling** | `package.json`, `.gitignore` | New dependencies, ignore rules |
+| **Upstream merge** | `scripts/docs-*.ts`, `src/workers/docs-*.ts`, `src/task/*.ts`, `src/shared/child-output.ts`, etc. | Merged from upstream v0.40.8–v0.40.18 (not fork-authored) |
