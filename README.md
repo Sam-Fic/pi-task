@@ -9,10 +9,83 @@
 [![npm](https://img.shields.io/npm/v/@mjasnikovs/pi-task?color=cb3837&logo=npm)](https://www.npmjs.com/package/@mjasnikovs/pi-task)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![pi extension](https://img.shields.io/badge/pi-extension-7c3aed)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-[![tests](https://img.shields.io/badge/tests-4631%20passing-3fb950)](#development)
+[![tests](https://img.shields.io/badge/tests-4280%20passing-3fb950)](#development)
 [![types](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 
 </div>
+
+---
+
+## Fork Changes — Sam-Fic/pi-task
+
+This fork diverges from [`mjasnikovs/pi-task`](https://github.com/mjasnikovs/pi-task)
+at the `v0.40.7` tag (merge base `4d151b2`). All 74 fork-only commits focus on a
+single goal: **replacing the legacy remote web UI with a Material 3 / mdui-based
+mobile-first interface**. Upstream docs-quality commits (v0.40.8–v0.40.18) have
+been merged in; they are not listed here.
+
+### What changed
+
+**Legacy UI removed, mdui UI built from scratch.**
+
+- Deleted `src/remote/ui.ts`, `ui-script.ts`, and `ui-styles.ts` (1,772 lines of
+  hand-rolled widgets). Added `src/remote/ui-mdui.ts` (3,025 lines) built on
+  [mdui 2.x](https://www.npmjs.com/package/mdui) and
+  [M3E components](https://matraic.github.io/m3e).
+- The new UI ships a scroll-to-collapse top app bar, a streaming context bar
+  that flattens at rest and waves while active, a capsule send button with
+  spring-rotation, and Material 3 Expressive color blocking.
+
+**Session management.**
+
+- Added `src/remote/sessions.ts` and `src/remote/backfill.ts` for switching
+  between persisted sessions and backfilling transcripts on reconnect.
+- A session sidebar lists all stored sessions; tapping one restores the full
+  transcript without a server round-trip.
+
+**Model picker, theme picker, and command suggestions.**
+
+- The app-bar name opens a model-picker dropdown built on `m3e-menu`.
+- A theme picker renders as a connected `m3e-button-group` with tonal variants
+  and an accent color picker that completes the MD3 token mapping.
+- Command suggestions are an anchored `m3e-menu` aligned to the input width.
+
+**Visual rhythm and shape system.**
+
+- Concentric bubble corners (outer radius = inner radius + gap) across all
+  surfaces — message bubbles, code blocks, thinking/tool cards.
+- Code blocks share one code-line rhythm; single-line blocks collapse to exact
+  capsule shapes. Wide markdown tables scroll inside the bubble.
+- Thinking and tool-call cards use an exact capsule radius and auto-collapse
+  when finished.
+
+**Scrollbar, FAB, and polish.**
+
+- Custom overlay scroll thumb replaces native scrollbars; scrollbar caps land
+  on the command panel's corner centers.
+- Scroll-to-bottom FAB sits in `tertiary-container` with a smooth rotation
+  animation; the initial rotation angle is tuned for the resting state.
+- A QR overlay showing the remote URL appears on startup.
+
+**Robustness.**
+
+- A throwing WebSocket handler degrades to a toast instead of crashing the
+  process (`uncaughtException`).
+- The context progress bar works even when the m3e CDN fails.
+- Model switching targets the current pi instance, not the one the server
+  captured at startup.
+- A fresh command context is bootstrapped so brand-new sessions can switch
+  models immediately.
+
+### Files touched (fork-only, 65 total)
+
+| Area | Files | Key changes |
+| --- | --- | --- |
+| **Remote UI** | `src/remote/ui-mdui.ts` (new, +3,025), `ui-render.ts`, `ui.ts` / `ui-script.ts` / `ui-styles.ts` (removed) | Full UI rewrite on mdui + M3E |
+| **Session management** | `src/remote/sessions.ts` (new), `backfill.ts` (new), `history.ts`, `protocol.ts`, `register.ts`, `server.ts`, `bridge.ts` | Persisted session switching, transcript backfill, protocol extensions |
+| **Remote tests** | `test/remote/*.test.ts` (8 files, +860 lines) | Coverage for backfill, sessions, protocol, server, register-server, bridge |
+| **Config / tooling** | `package.json`, `.gitignore` | New dependencies, ignore rules |
+| **Upstream merge** | `scripts/docs-*.ts`, `src/workers/docs-*.ts`, `src/task/*.ts`, `src/shared/child-output.ts`, etc. | Merged from upstream v0.40.8–v0.40.18 (not fork-authored) |
 
 ---
 
@@ -148,10 +221,9 @@ Prompts use a **first-answer-wins race**: the same question shows in the local T
 
 Tap the bell (◯ → ◉) in the remote header to get pushed a notification — even with the app backgrounded or the phone locked — when:
 
-- a **grill / clarify question** needs answering (*"pi needs your input"*), or
-- a **task finishes** (*"Task finished"*).
-
-Host agent errors are deliberately **not** pushed — most of them happen outside any task, and a push on every one is just noise.
+- a **grill / clarify question** needs answering (*"pi needs your input"*),
+- a **task finishes** (*"Task finished"*), or
+- the agent hits an **error** (*"Agent error"*).
 
 Delivery is **server → push service → device** over the [Web Push](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) standard (service worker + VAPID), so it reaches a suspended device. It works on desktop browsers and on iOS home-screen PWAs.
 
@@ -201,14 +273,11 @@ Resolves an installed package, indexes its API surface and README into a local S
 | `npm` | `package.json`, or a `node_modules/` directory | the `.d.ts` files the package ships, plus README | the installed `package.json` |
 | `cargo` | `Cargo.toml`, at the directory or one level below it | `.rs` source reduced to public item heads, doc comments and attributes | `Cargo.lock` |
 | `hackage` | `*.cabal`, `cabal.project`, `stack.yaml` or `package.yaml` | `.hs` source reduced to the export list, signatures and type declarations | `dist-newstyle/cache/plan.json`, then `cabal.project.freeze`, then `stack.yaml.lock` |
-| `go` | `go.mod` or `go.work`, at the directory, above it or one level below | `.go` source reduced to exported declarations, struct fields, interface methods and doc comments | `go.mod`, which since Go 1.17 carries the resolved closure |
 
 - **No manifest, no lookup.** In a directory with none of the above the tool refuses, spawns nothing and installs nothing, and points you at `pi-worker-search` / `pi-worker-fetch` instead.
 - **Two manifests** (a Tauri app, say) are resolved by whichever registry already has the package on disk. If neither does, the call is refused as ambiguous and you pass `ecosystem: "cargo"` to say which.
-- A package the project does not have is fetched once into a dedicated cache dir: `npm install --ignore-scripts` for npm, the `.crate` tarball for cargo, the Hackage tarball (or cabal's own cached copy) for hackage, the module zip from `proxy.golang.org` for go.
+- A package the project does not have is fetched once into a dedicated cache dir: `npm install --ignore-scripts` for npm, the `.crate` tarball for cargo, the Hackage tarball (or cabal's own cached copy) for hackage.
 - A Haskell **module** name is refused by name — `Data.Aeson` is not a package, `aeson` is.
-- For **go you pass the import path**, `github.com/gin-gonic/gin/binding` or `net/http`, because that is what a Go file names. The module serving it is worked out by asking the proxy for the longest prefix that resolves — `gin/binding` belongs to `gin`, while `aws-sdk-go-v2/service/s3` is its own module. Vendored source and the local module cache are read first and cost nothing.
-- The **Go standard library** is not on the proxy. It is read from a local `GOROOT` where there is one, and otherwise sliced out of the `golang.org/toolchain` archive over HTTP range requests — about 2 MB for `net/http` against 83 MB for the archive.
 - The first call for a `(ecosystem, package, version)` triple pays a one-time ingestion cost; later calls are FTS-only.
 - Cache lives at `${XDG_CACHE_HOME:-~/.cache}/pi-worker/docs.sqlite` — delete it to reset.
 
@@ -263,7 +332,7 @@ them checked in.
 
 ```sh
 bun install
-bun run test       # 4631 tests pass across 247 files (1 skip)
+bun run test       # 4281 tests across 234 files
 bun run lint       # prettier + eslint + tsc --noEmit
 bun run build      # tsc → dist/
 ```
@@ -281,76 +350,3 @@ under the same license. Contributions are accepted under the
 [Contributor License Agreement](./CLA.md), which allows dual-licensing;
 for a commercial license that does not carry the AGPL's copyleft obligations,
 contact the author.
-
----
-
-## Fork Changes — Sam-Fic/pi-task
-
-This fork diverges from [`mjasnikovs/pi-task`](https://github.com/mjasnikovs/pi-task)
-at the `v0.40.7` tag (merge base `4d151b2`). All 74 fork-only commits focus on a
-single goal: **replacing the legacy remote web UI with a Material 3 / mdui-based
-mobile-first interface**. Upstream docs-quality commits (v0.40.8–v0.40.18) have
-been merged in; they are not listed here.
-
-### What changed
-
-**Legacy UI removed, mdui UI built from scratch.**
-
-- Deleted `src/remote/ui.ts`, `ui-script.ts`, and `ui-styles.ts` (1,772 lines of
-  hand-rolled widgets). Added `src/remote/ui-mdui.ts` (3,025 lines) built on
-  [mdui 2.x](https://www.npmjs.com/package/mdui) and
-  [M3E components](https://matraic.github.io/m3e).
-- The new UI ships a scroll-to-collapse top app bar, a streaming context bar
-  that flattens at rest and waves while active, a capsule send button with
-  spring-rotation, and Material 3 Expressive color blocking.
-
-**Session management.**
-
-- Added `src/remote/sessions.ts` and `src/remote/backfill.ts` for switching
-  between persisted sessions and backfilling transcripts on reconnect.
-- A session sidebar lists all stored sessions; tapping one restores the full
-  transcript without a server round-trip.
-
-**Model picker, theme picker, and command suggestions.**
-
-- The app-bar name opens a model-picker dropdown built on `m3e-menu`.
-- A theme picker renders as a connected `m3e-button-group` with tonal variants
-  and an accent color picker that completes the MD3 token mapping.
-- Command suggestions are an anchored `m3e-menu` aligned to the input width.
-
-**Visual rhythm and shape system.**
-
-- Concentric bubble corners (outer radius = inner radius + gap) across all
-  surfaces — message bubbles, code blocks, thinking/tool cards.
-- Code blocks share one code-line rhythm; single-line blocks collapse to exact
-  capsule shapes. Wide markdown tables scroll inside the bubble.
-- Thinking and tool-call cards use an exact capsule radius and auto-collapse
-  when finished.
-
-**Scrollbar, FAB, and polish.**
-
-- Custom overlay scroll thumb replaces native scrollbars; scrollbar caps land
-  on the command panel's corner centers.
-- Scroll-to-bottom FAB sits in `tertiary-container` with a smooth rotation
-  animation; the initial rotation angle is tuned for the resting state.
-- A QR overlay showing the remote URL appears on startup.
-
-**Robustness.**
-
-- A throwing WebSocket handler degrades to a toast instead of crashing the
-  process (`uncaughtException`).
-- The context progress bar works even when the m3e CDN fails.
-- Model switching targets the current pi instance, not the one the server
-  captured at startup.
-- A fresh command context is bootstrapped so brand-new sessions can switch
-  models immediately.
-
-### Files touched (fork-only, 65 total)
-
-| Area | Files | Key changes |
-| --- | --- | --- |
-| **Remote UI** | `src/remote/ui-mdui.ts` (new, +3,025), `ui-render.ts`, `ui.ts` / `ui-script.ts` / `ui-styles.ts` (removed) | Full UI rewrite on mdui + M3E |
-| **Session management** | `src/remote/sessions.ts` (new), `backfill.ts` (new), `history.ts`, `protocol.ts`, `register.ts`, `server.ts`, `bridge.ts` | Persisted session switching, transcript backfill, protocol extensions |
-| **Remote tests** | `test/remote/*.test.ts` (8 files, +860 lines) | Coverage for backfill, sessions, protocol, server, register-server, bridge |
-| **Config / tooling** | `package.json`, `.gitignore` | New dependencies, ignore rules |
-| **Upstream merge** | `scripts/docs-*.ts`, `src/workers/docs-*.ts`, `src/task/*.ts`, `src/shared/child-output.ts`, etc. | Merged from upstream v0.40.8–v0.40.18 (not fork-authored) |
