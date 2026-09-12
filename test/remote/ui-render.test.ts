@@ -166,8 +166,10 @@ describe('renderMarkdown (block level)', () => {
         const h = renderMarkdown()('```ts\nconst x = 1 // <hi>\n```')
         expect(h).toContain('<div class="code-block">')
         expect(h).toContain('<div class="code-head">')
-        expect(h).toContain('<div class="code-lang">ts</div>')
-        expect(h).toContain('<button class="copy-btn"') // copy button in the header
+        expect(h).toContain('<button class="copy-btn"') // copy button in the corner
+        // No language label: it shared a pill with the copy button, which made
+        // the button itself read as a capsule (the label is gone by design).
+        expect(h).not.toContain('code-lang')
         expect(h).toContain('hl-kw') // `const` highlighted
         expect(h).toContain('&lt;hi&gt;') // content escaped, no raw tag
         expect(h).not.toContain('<hi>')

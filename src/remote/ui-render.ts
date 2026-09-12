@@ -157,10 +157,12 @@ export function renderModule(): string {
       for (var k = 0; k < blocks.length; k++) {
         var b = blocks[k];
         if (b.type === 'code') {
-          // Header row carries the language label and a copy button (wired by
-          // event delegation in clientScript — it reads the <code> textContent).
-          out += '<div class="code-block"><div class="code-head' + (b.lang ? '' : ' no-lang') + '">'
-            + '<div class="code-lang">' + (b.lang ? escHtml(b.lang) : '') + '</div>'
+          // The corner carries a single copy button (swapped for a real MD3 icon
+          // button in clientScript, which reads the <code> textContent). There is
+          // deliberately no language label: sharing a capsule with one made the
+          // button itself read as a pill, and the highlighting already shows the
+          // language.
+          out += '<div class="code-block"><div class="code-head">'
             + '<button class="copy-btn" type="button" aria-label="Copy code">Copy</button>'
             + '</div>'
             + '<pre><code>' + syntaxHighlight(b.content, b.lang) + '</code></pre></div>';

@@ -34,12 +34,14 @@ const M3E_VERSION = '2.7.9'
 // Stage 0 uses mdui-icon name="..." which is resolved by mdui 2.x internally.
 // const ICON_BASE = `https://unpkg.com/@mdui/icons@1.0.4`
 
-// Stage 0 imports ONLY the bundle (and a few helper function imports from
-// inside it). All <mdui-*> custom elements are registered automatically
-// when the bundle executes.
-const BUNDLE_IMPORTS = `
-    import { snackbar } from 'https://esm.sh/@m3e/web@${M3E_VERSION}/snackbar';
-`
+// Every @m3e/web module is loaded LAZILY (see the import block in stage0Logic).
+// Nothing third-party is imported statically here on purpose: a static import
+// whose module cannot be fetched or whose export does not exist is a module
+// INSTANTIATION error, so the whole client script never runs and the page comes
+// up blank — which is exactly what `import { snackbar }` did (that subpath
+// exports `M3eSnackbar`, not `snackbar`). One lazy import per component keeps a
+// CDN hiccup or a renamed export to one broken control, not a dead UI.
+const BUNDLE_IMPORTS = ''
 
 // Stage 0 doesn't import any @mdui/icons — we use mdui-icon name= lookups,
 // which work out of the box once the bundle is loaded.
@@ -57,12 +59,17 @@ const CSS = `
    Only the send button needs our own transform spring for the
    send<->stop 90deg swing. */
 m3e-icon-button#send-btn {
-    /* Capsule, as tall as the input it sits beside: stretch to the
-       composer row and widen past the height so the full-radius shape
-       reads as a stadium, not a circle. Height tracks the autosize input
-       as it grows. */
+    /* Capsule, as tall as the input it sits beside. align-self:stretch makes
+       the button track the <m3e-form-field> host height exactly, and it keeps
+       tracking when the textarea goes multiline. The host is 4px taller than
+       the field's VISIBLE box (that 4px is the collapsed supporting-text row's
+       leftover margin, see the m3e-form-field rule below), so
+       margin-bottom:0.25rem trims the button by exactly that much and its top
+       and bottom edges land flush on the visible input box. Width is wider than
+       the height so the full-radius shape reads as a stadium, not a circle. */
     width: 5.25rem;
     align-self: stretch;
+    margin-bottom: 0.25rem;
     --m3e-icon-button-container-height: 100%;
 }
 m3e-icon-button#send-btn:active {
@@ -102,15 +109,31 @@ html, body {
     height: 100%;
     margin: 0;
     overflow: hidden;
-    background: var(--md-sys-color-surface);
-    color: var(--md-sys-color-on-surface);
+    /* <m3e-theme> publishes --md-sys-color-* on ITSELF (#app-theme), a
+       DESCENDANT of body — so html/body can never resolve them. The Canvas/
+       CanvasText system colors (which honour color-scheme) are the fallback
+       that keeps the page from flashing white behind #root; the real themed
+       base lives on #root (see below). */
+    background: var(--md-sys-color-surface, Canvas);
+    color: var(--md-sys-color-on-surface, CanvasText);
     font-family: system-ui, sans-serif;
+    /* deliberately no color: see #app-theme below */
     /* Suppress the WebKit/Blink mobile tap flash on every tapped surface —
        the property inherits, so one declaration here (rather than per
        component) covers light DOM, slotted content and shadow trees alike.
        Press feedback is already provided by each component's state layer. */
     -webkit-tap-highlight-color: transparent;
 }
+/* The real themed base. <m3e-theme> publishes --md-sys-color-* on ITSELF, so
+   this is the highest element that can actually resolve them, and the only
+   anchor that reaches everything: #root covers the app shell, but the overlay
+   panels (#settings-panel, #notif-panel, #prompt-card, #reconnect-overlay) are
+   direct children of #app-theme — siblings of #root, not descendants — so they
+   never picked up #root's colour. Anchoring here means anything that doesn't
+   set its own colour follows the theme instead of falling back to the initial
+   black (invisible on the dark surface) or to CanvasText (which tracks the
+   BROWSER's scheme, not the app's, and so can be the exact opposite). */
+#app-theme { color: var(--md-sys-color-on-surface); }
 /* Native scrollbars are hidden app-wide — scrolling surfaces get the
    custom .scroll-thumb overlay instead (see attachScrollbar in the client:
    fades in while scrolling, idles out, draggable). */
@@ -140,6 +163,13 @@ html, body {
     /* One child: the session drawer wraps the whole main column. */
     grid-template-rows: minmax(0, 1fr);
     height: var(--app-height, 100dvh);
+    /* #root is the outermost element INSIDE <m3e-theme>, so this is where the
+       generated tokens are first resolvable. Anchor the base surface and text
+       color here — every descendant that doesn't set its own colour inherits
+       these adaptive values. Without it they fall back to the initial black,
+       which is invisible on the dark surface (e.g. the settings-card labels). */
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
 }
 
 /* Session sidebar. m3e-drawer-container overlays the drawer (over-mode, with
@@ -153,6 +183,10 @@ html, body {
     grid-template-rows: minmax(0, 1fr) auto auto auto;
     height: 100%;
     min-height: 0;
+    /* Without min-width:0 the grid column adopts the input bar's min-content
+       (~394px, set by the textarea's default cols), forcing horizontal
+       overflow on narrow phones even though the field itself can shrink. */
+    min-width: 0;
 }
 #drawer { --m3e-drawer-container-width: min(84vw, 20rem); }
 #session-drawer {
@@ -212,16 +246,12 @@ html, body {
 }
 /* The app bar stays a quiet neutral band — the expressive accents live in
    the composer, avatars and the task panel instead. */
-#app-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: calc(var(--safe-top) + 0.3rem) 0.5rem 0.3rem 1rem;
-    background: var(--md-sys-color-surface-container);
-    min-height: 3.25rem;
-    box-sizing: border-box;
-}
-#app-bar .grow { flex: 1; }
+/* The bar's height, surface and padding are owned by <m3e-app-bar> now. These
+   three slotted clusters just lay out their own content; M3E's template slots
+   them into leading / title / trailing. */
+#app-bar { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+#app-title { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+#app-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 /* The model name takes the old title slot; falls back to the app name
    (muted) before the first snapshot reports a model. The pill is the
    activation surface: an m3e-menu-trigger nested inside augments it with
@@ -340,9 +370,16 @@ html, body {
    widget uses. Track sits one tonal step above the bar; the wave turns
    error-red once usage runs hot (the old gradient's danger signal). */
 #ctx-stack {
-    position: relative;
+    position: absolute;
+    /* Sits in the band just below M3E's small app-bar (whose host is 64px =
+       4rem). Below the bar's z-index (30), so it must clear its full height
+       or the bar would paint over the wave. */
+    top: calc(var(--safe-top) + 4rem);
+    left: 0; right: 0;
+    height: 0.5rem;
     display: block;
     width: 100%;
+    z-index: 29;
     --md-sys-color-primary: var(--md-sys-color-primary);
     --md-sys-color-secondary-container: var(--md-sys-color-surface-container-highest);
 }
@@ -389,11 +426,10 @@ html, body {
 #chat-wrap { position: relative; min-height: 0; display: flex; overflow: hidden; }
 #chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
     padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
-    /* mdui-top-app-bar writes its padding-top inline once at init — before
-       the wavy line has laid out — so the first message ends up tucked
-       under the bar. Own it: full bar height (row + wave) plus air.
-       !important beats the component's inline style. */
-    padding-top: calc(var(--safe-top) + 3.25rem + 10px + 0.5rem) !important; }
+    /* Own the top inset: full bar height (M3E small app-bar = 64px) plus the
+       10px wave band plus air, so the first message never tucks under the
+       bar. !important beats the component's own inline padding-top. */
+    padding-top: calc(var(--safe-top) + 4rem + 10px + 0.5rem) !important; }
 /* The bar paints neutral (matching the #app-bar row); it also must clear
    the notch. m3e tokens are full color values — reference --md-sys-color-*
    directly, never rgb()-wrapped, and never self-referentially (a var
@@ -401,7 +437,9 @@ html, body {
    how the app-bar icons once ended up at 1.7:1 contrast). */
 m3e-app-bar#top-bar {
     --md-sys-color-surface: var(--md-sys-color-surface-container);
-    --z-index: 30;
+    /* Pinned to the top of the scroll-wrap; the chat clears it via
+       #chat-log's padding-top. z above the chat and the ctx wave. */
+    position: absolute; top: 0; left: 0; right: 0; z-index: 30;
     width: 100%;
     /* The small variant hardcodes a 64px host with 12px padding, which
        double-centers our 52px row and pushes the context wave outside the
@@ -409,9 +447,6 @@ m3e-app-bar#top-bar {
     padding: 0;
     height: auto;
 }
-/* The component's default slot lays children out in a row; our single
-   wrapper stacks the bar row and the context wave inside it. */
-m3e-app-bar#top-bar .bar-stack { width: 100%; }
 /* Children must keep their natural height: overflow-hidden collapse wrappers
    would otherwise be flex-shrunk to a squashed strip instead of scrolling. */
 #chat-log > * { flex-shrink: 0; }
@@ -522,11 +557,14 @@ m3e-app-bar#top-bar .bar-stack { width: 100%; }
     font-family: var(--font-mono);
     font-size: 0.9em;
 }
-/* Code block. Language + copy float as a pill over the top-right corner
-   instead of a full-width header bar, so the code surface stays clean.
-   Concentric radii with the pill: block radius = pill half-height (1rem of
-   the 2rem pill) + pill inset (shape-corner-extra-small), so both arcs
-   share a center. */
+/* Code block. The copy button floats as a bare circular icon button over the
+   top-right corner instead of a full-width header bar, so the code surface
+   stays clean. It used to share a 「lang ⧉」 capsule with the language label;
+   that pill read as a capsule-shaped BUTTON on any hover-capable device and is
+   gone (the label itself is no longer rendered — see ui-render.ts). The
+   concentric radius math below still holds: the head is 2rem tall and sits
+   --_pill-inset from the corner, so block radius = button radius (1rem) + inset
+   and both arcs share a center. */
 .bubble .code-block {
     position: relative;
     font-family: var(--font-mono);
@@ -555,41 +593,15 @@ m3e-app-bar#top-bar .bar-stack { width: 100%; }
     height: 2rem;
     box-sizing: border-box;
     z-index: 1;
-    display: flex; align-items: center; gap: 0.15rem;
-    background: var(--md-sys-color-surface-container);
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,.3);
-    border-radius: 999px;
-    padding: 0.1rem 0.2rem 0.1rem 0.65rem;
+    display: flex; align-items: center;
     opacity: 0;
     transition: opacity 0.15s;
 }
 .bubble .code-block:hover .code-head { opacity: 1; }
-/* Touch devices have no hover — keep the pill faintly visible and icon-only
-   so it never covers the code. The label is gone, so the capsule collapses
-   to a circle around the button (same as the no-lang case below). */
+/* Touch devices have no hover — keep the button faintly visible so it never
+   hides entirely (and never covers the code: it is one 2rem circle). */
 @media (hover: none) {
-    .bubble .code-head { opacity: 0.75; padding: 0.1rem; }
-    .bubble .code-head .code-lang { display: none; }
-}
-/* An unlabeled block emits .no-lang. Hide the empty label (it would still
-   count as a flex item and add its gap) and drop the capsule's asymmetric
-   padding — what remains is a square head, and the inherited 999px radius
-   reads it as a circle hugging the copy button. */
-.bubble .code-lang:empty { display: none; }
-.bubble .code-head.no-lang { padding: 0.1rem; }
-.bubble .code-lang {
-    color: var(--md-sys-color-on-surface-variant);
-    font-family: var(--font-mono);
-    font-size: 0.7rem; letter-spacing: 0.05em;
-    /* kill the inherited 1.55 strut: its asymmetric half-leading rode the
-       text optically high next to the 16px icon line box */
-    line-height: 1;
-    display: flex; align-items: center;
-}
-.bubble .code-head .copy-btn {
-    font-size: 1rem;
-    width: 1.7rem; height: 1.7rem;
-    color: var(--md-sys-color-on-surface-variant);
+    .bubble .code-head { opacity: 0.75; }
 }
 .bubble .code-block pre {
     margin: 0;
@@ -669,6 +681,34 @@ m3e-expansion-panel.thinking {
        the shared token the flush header consumes too. */
     --_card-r: calc((0.85rem * 1.4 + 1.2rem) / 2);
     border-radius: var(--_card-r);
+    /* The m3e-expansion-header the panel renders internally pins its height
+       to --m3e-expansion-header-collapsed-height (default 48px) — ~10px
+       taller than this card's one-line header (2 × --_card-r), which pushed
+       the collapsed card off the exact-capsule shape (radius < half height).
+       Pin it to the card's own metric; the open state too, so the header row
+       never pads out. */
+    --m3e-expansion-header-collapsed-height: calc(2 * var(--_card-r));
+    --m3e-expansion-header-expanded-height: calc(2 * var(--_card-r));
+    /* The header/body are FLUSH children of the card (the header's own
+       0.85rem padding is the whole inset, and radii match with gap 0) — the
+       same inset system the pre-m3e card had. m3e-expansion-header ships its
+       own space300 left/right padding and m3e-expansion-panel adds a content
+       padding on top, which pushed the text ~24px further in per side. Zero
+       them so the app's padding is the only inset. */
+    --m3e-expansion-header-padding-left: 0;
+    --m3e-expansion-header-padding-right: 0;
+    --m3e-expansion-panel-content-padding: 0;
+    /* The panel's internal .base paints its own OPAQUE container color, which
+       would bury the card background below (this card's secondary tint, the
+       tool card's surface-container) — and leave a faint 1px seam where that
+       opaque layer meets the app's rounded corner. Let the app's own
+       background be the only paint. */
+    --m3e-expansion-panel-container-color: transparent;
+    /* No elevation: the pre-m3e card was a flat tinted surface. The component
+       would otherwise paint an elevation shadow on its square-radius .base,
+       which the host clip turns into a faint hairline at the right edge. */
+    --m3e-expansion-panel-elevation: none;
+    --m3e-expansion-panel-open-elevation: none;
     /* A whisper of secondary tint marks "model reasoning" apart from the
        neutral tool-call cards it sits between — expressive, but the body
        text stays on the mixed (mostly neutral) surface. */
@@ -746,6 +786,23 @@ m3e-expansion-panel.tool-call {
     margin: 0 auto;
     --_card-r: calc((0.85rem * 1.4 + 1.2rem) / 2);
     border-radius: var(--_card-r);
+    /* Same exact-capsule pin as .thinking: the panel's internal
+       m3e-expansion-header would otherwise hold the collapsed card at its
+       48px default instead of one header line (2 × --_card-r). */
+    --m3e-expansion-header-collapsed-height: calc(2 * var(--_card-r));
+    --m3e-expansion-header-expanded-height: calc(2 * var(--_card-r));
+    /* Same flush-child inset as .thinking — drop the component's own
+       header/content horizontal padding so the header's 0.85rem (and the
+       diff/result rows' padding) is the only inset. */
+    --m3e-expansion-header-padding-left: 0;
+    --m3e-expansion-header-padding-right: 0;
+    --m3e-expansion-panel-content-padding: 0;
+    /* Same as .thinking: let the card's own surface-container paint instead
+       of the component's opaque .base layer, and drop the component's
+       elevation shadow. */
+    --m3e-expansion-panel-container-color: transparent;
+    --m3e-expansion-panel-elevation: none;
+    --m3e-expansion-panel-open-elevation: none;
     background: var(--md-sys-color-surface-container);
     overflow: hidden;
 }
@@ -803,9 +860,28 @@ m3e-expansion-panel.tool-call[open] .tool-header::before { transform: rotate(45d
     font-size: 0.75rem;
     color: var(--md-sys-color-on-surface-variant);
 }
-.tool-diff {
-    padding: 0.4rem 0.85rem 0.4rem;
+/* The result area (result text + diff) is ONE inset, concentric plate rather
+   than a full-bleed surface: it floats inside the card with a 0.6rem gap on
+   the left/right/bottom and sits flush under the header. Its radius is the
+   card radius minus that gap, so the bottom arcs share a centre with the
+   card's (the concentric rule). It is empty until a result arrives, hence the
+   :empty hide — an empty body would paint a bare 0.6rem strip. */
+.tool-body {
     background: var(--md-sys-color-surface-container-lowest);
+    /* margin, not padding: padding would leave the background full-bleed and
+       only inset the text. The margin insets the whole plate. */
+    margin: 0 0.6rem 0.6rem;
+    border-radius: calc(var(--_card-r) - 0.6rem);
+    overflow: hidden;
+}
+.tool-body:empty { display: none; }
+.tool-diff {
+    /* Both children are transparent and share the .tool-body plate. Each one
+       carries the SAME roomy padding on all four sides, so the text sits an
+       equal 0.75rem from the plate's edges (the plate's top/bottom inset
+       comes from the first and last child's own padding). */
+    padding: 0.75rem;
+    background: transparent;
     font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.45;
@@ -815,8 +891,11 @@ m3e-expansion-panel.tool-call[open] .tool-header::before { transform: rotate(45d
 }
 .tool-result {
     margin: 0;
-    padding: 0.5rem 0.85rem;
-    background: var(--md-sys-color-surface-container-lowest);
+    /* Transparent: the shared .tool-body plate carries the surface. Equal,
+       roomy padding on all four sides gives the terminal output breathing
+       room and matches .tool-diff's inset. */
+    padding: 0.75rem;
+    background: transparent;
     font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.45;
@@ -860,7 +939,21 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
     width: 100%;
     box-sizing: border-box;
 }
-#input { flex: 1; min-width: 0; }
+#input { flex: 1; min-width: 0; width: 100%; }
+/* The flex child of the bar is the m3e-form-field WRAPPER, not the inner
+   #input textarea. The wrapper must grow to fill the row; otherwise it keeps
+   its intrinsic width and leaves a gap beside the send button. (#input's own
+   flex:1 only governs the textarea inside the wrapper.)
+   At the component's default density the visible field is 56px (the height the
+   old MDUI text-field had, and what reads as "normal"), but the host is 76px:
+   the extra ~20px is the form-field's RESERVED supporting-text row at the
+   bottom (16px body-small line-height + 4px margin). That reserved row has no
+   part and no height token, so it can't be removed directly — but it's empty
+   here (no supporting/error text), so collapsing its line-height to 0 makes the
+   host ~60px and lets the stretched send button sit flush with the visible
+   field. Density is left at default on purpose: density:-3 had shrunk the
+   VISIBLE field to 44px, which looked too short. Scoped to this host only. */
+#input-bar > m3e-form-field { flex: 1 1 auto; min-width: 0; --md-sys-typescale-body-small-line-height: 0px; }
 /* Expressive send button: a filled primary circle — the composer's one
    loud accent. send<->stop swings 90deg on the spring token; running/armed
    retarget the primary tokens to the error palette (armed is full error). */
@@ -876,7 +969,11 @@ m3e-icon-button#send-btn.armed {
     position: fixed; inset: 0;
     /* Scrim is M3-black by design; its text is always white — the only
        non-token pair here, deliberate per the M3 scrim spec. */
-    background: rgb(var(--md-sys-color-scrim) / 0.6);
+    /* m3e-theme emits FULL COLOR VALUES (#rrggbb), not "r, g, b" triplets, so
+       rgb(var(--md-sys-color-scrim) / .6) is invalid CSS and silently dropped
+       the scrim — leaving the white text floating on the bare surface and
+       practically invisible in light mode. color-mix handles hex tokens. */
+    background: color-mix(in srgb, var(--md-sys-color-scrim) 60%, transparent);
     color: #fff; font-weight: 500;
     display: none;
     align-items: center; justify-content: center;
@@ -1008,13 +1105,16 @@ m3e-card#status-panel {
    seed — a swatch is the one place a hardcoded color is the content, not
    the chrome. The selection ring re-reads the live primary token, so it
    follows whichever theme is currently applied. */
-#accent-list { display: flex; align-items: center; gap: 0.4rem; }
+#accent-list { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+/* "Extract from image" sits on its own full-width row so the narrow panel's
+   overflow:hidden can't clip it beside the seed dots. */
+#accent-extract { flex: 1 1 100%; justify-content: center; }
 .accent-dot {
     flex: none;
     width: 1.35rem; height: 1.35rem;
     padding: 0; border: none; border-radius: 50%;
     cursor: pointer;
-    box-shadow: inset 0 0 0 1px rgb(var(--md-sys-color-outline) / 0.5);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 50%, transparent);
     transition: box-shadow 150ms;
 }
 .accent-dot.selected {
@@ -1155,9 +1255,33 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     white-space: pre-wrap;
 }
 
-/* Copy buttons: the code-block one sits in its header bar (rendered by the
-   markdown module); the message one floats on finished assistant bubbles. */
-.copy-btn { font-size: 1.1rem; }
+/* Copy buttons: one circle per code block (in .code-head), one per finished
+   assistant bubble (.bubble-copy). Both are identical 2rem circles carrying the
+   same glyph; only their anchoring differs.
+     - m3e-icon-button's HOST is the painted surface and — unlike the old
+       mdui-button-icon — ships NO default corner radius, so the radius has to
+       come from here (it wins over the component's :host styles).
+     - The component's own surface (the shadow's .base), its state layer, ripple
+       and focus ring take their HEIGHT from --m3e-icon-button-container-height
+       (default 40px) while their WIDTH is 100% of the host: at a 2rem host that
+       painted a 32×40 stadium — a vertical capsule — so the container is pinned
+       to the host's own square.
+     - The glyph is --m3e-icon-button-icon-size (default 24px) — 3/4 of a 2rem
+       circle, which is what read as "the icon is too large" — so it drops to
+       1.2rem (19.2px, the MD3 60% ratio against a 32px container).
+     - The round shape is forced in every state: the pressed "shape morph" would
+       otherwise swap the circle for a squircle mid-tap. */
+.copy-btn {
+    width: 2rem; height: 2rem;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    --m3e-icon-button-container-height: 2rem;
+    --m3e-icon-button-icon-size: 1.2rem;
+    --m3e-icon-button-shape-round: 999px;
+    --m3e-icon-button-shape-square: 999px;
+    --m3e-icon-button-shape-pressed-morph: 999px;
+}
 .copy-btn.copied { color: var(--md-sys-color-primary); }
 .bubble-copy {
     position: absolute;
@@ -1166,9 +1290,6 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
        subtract this button's 1rem radius per axis and the 2rem circle lands
        dead on that center — riding inside the big curve, not overhanging. */
     top: calc(var(--_code-r) - 0.25rem); right: calc(var(--_code-r) - 0.25rem);
-    width: 2rem; height: 2rem;
-    background: var(--md-sys-color-surface-container-high);
-    border-radius: 999px;
     opacity: 0;
     transition: opacity 0.15s;
 }
@@ -1269,39 +1390,41 @@ export function mduiHtml(wsUrl: string): string {
            behavior against the chat log as its scroll target (M3E's app-bar
            has no scroll behavior, and the scroller is an inner element, so
            the attribute is set from JS after the DOM is parsed). -->
-      <m3e-app-bar id="top-bar" variant="small">
-        <!-- One wrapper: the component's default slot is a horizontal flex
-             (icon + title + actions), so the bar row and the wavy context
-             line must live in a single block child to stack. -->
-        <div class="bar-stack">
-          <div id="app-bar">
-            <m3e-icon-button id="menu-btn" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
-            <span id="status-dot"></span>
-            <div id="model-picker">
-              <m3e-menu-trigger for="model-menu" aria-label="切换模型">
-                <span id="status-model">π-task remote</span>
-                <span id="model-caret" aria-hidden="true"></span>
-              </m3e-menu-trigger>
-            </div>
-            <span id="status-ctx"></span>
-            <span class="grow"></span>
-            <span id="status-chip">disconnected</span>
-            <m3e-icon-button id="notif-btn" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
-            <m3e-icon-button id="settings-btn" aria-label="设置"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
+      <m3e-app-bar id="top-bar" variant="small" scroll-behavior="hide">
+        <!-- M3E's app-bar has NO default slot — its content only renders when
+           assigned to the named slots (leading / title / subtitle / trailing).
+           The old MDUI shell used a single flex wrapper (\`bar-stack\`); M3E
+           silently drops unassigned light children, so the bar came up empty
+           until the content was re-homed into slots below. -->
+        <div id="app-bar" slot="leading">
+          <m3e-icon-button id="menu-btn" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
+          <span id="status-dot"></span>
+        </div>
+        <div id="app-title" slot="title">
+          <div id="model-picker">
+            <m3e-menu-trigger for="model-menu" aria-label="切换模型">
+              <span id="status-model">π-task remote</span>
+              <span id="model-caret" aria-hidden="true"></span>
+            </m3e-menu-trigger>
           </div>
-          <!-- Flat + wavy stacked: idle shows the flat line; while the
-               agent streams the wavy one (which rolls by design) fades in
-               above it — a 300ms crossfade reads as the line growing a
-               wave. The library has no built-in amplitude morph. -->
-          <div id="ctx-stack">
-            <div id="ctx-fallback" aria-hidden="true"><i></i></div>
-            <m3e-linear-progress-indicator id="ctx-bar-flat" value="0" max="100"
-              aria-hidden="true"></m3e-linear-progress-indicator>
-            <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
-              aria-label="上下文用量"></m3e-linear-progress-indicator>
-          </div>
+          <span id="status-ctx"></span>
+        </div>
+        <div id="app-actions" slot="trailing">
+          <span id="status-chip">disconnected</span>
+          <m3e-icon-button id="notif-btn" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
+          <m3e-icon-button id="settings-btn" aria-label="设置"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
         </div>
       </m3e-app-bar>
+      <!-- Context-usage wave: a second row under the bar. M3E's small app-bar
+           has no room for it, so it lives as an absolutely-positioned sibling
+           in the band below the bar row (cleared by #chat-log's padding-top). -->
+      <div id="ctx-stack">
+        <div id="ctx-fallback" aria-hidden="true"><i></i></div>
+        <m3e-linear-progress-indicator id="ctx-bar-flat" value="0" max="100"
+          aria-hidden="true"></m3e-linear-progress-indicator>
+        <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
+          aria-label="上下文用量"></m3e-linear-progress-indicator>
+      </div>
       <div id="chat-log"></div>
       <m3e-fab id="scroll-bottom" variant="tertiary-container" size="small" lowered aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
     </main>
@@ -1420,6 +1543,10 @@ function stage0Logic(wsUrl: string): string {
       : FALLBACK_WS_URL;
 
     const chatLog      = document.getElementById('chat-log');
+    // Drive M3E's hide-on-scroll against the chat scroller. The property is
+    // guarded because the component only upgrades once its CDN module loads.
+    const topBar = document.getElementById('top-bar');
+    if (topBar && 'control' in topBar) { try { topBar.control = chatLog; } catch (_) {} }
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
     const ctxBar       = document.getElementById('ctx-bar');
@@ -1521,7 +1648,15 @@ function stage0Logic(wsUrl: string): string {
         check: ['M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
                 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'],
         settings: ['M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.566.566 0 0 0-.18-.03c-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
-                   'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z']
+                   'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z'],
+        content_copy: ['M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+                'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z'],
+        person: ['M12 6c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2m0 10c2.7 0 5.8 1.29 6 2H6c.23-.72 3.31-2 6-2m0-12C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 10c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+                'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'],
+        error_outline: ['M11 15h2v2h-2v-2zm0-8h2v6h-2V7zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z',
+                'M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z'],
+        auto_awesome: ['m19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25zm0 6-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25zm-7.5-5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zm-1.51 3.49L9 15.17l-.99-2.18L5.83 12l2.18-.99L9 8.83l.99 2.18 2.18.99-2.18.99z',
+                'm19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z']
       };
       for (const name in iconPaths) {
         m.registerIcon(name, 'outlined', {
@@ -1532,6 +1667,11 @@ function stage0Logic(wsUrl: string): string {
     }).catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/icon-button').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/button').catch(() => {});
+    // Both are used by the settings panel (the light/dark/auto group and the
+    // thinking-collapse row) but were never imported, so those two controls
+    // rendered as un-upgraded inline elements.
+    import('https://esm.sh/@m3e/web@2.7.9/button-group').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/expansion-panel').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/drawer-container').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/nav-menu').catch(() => {});
@@ -1864,12 +2004,18 @@ function stage0Logic(wsUrl: string): string {
     function mountMarkdown(el, text) {
       el.innerHTML = renderMarkdown(text);
       el.querySelectorAll('.code-head .copy-btn').forEach((b) => {
-        const icon = document.createElement('m3e-icon-button');
-        icon.type = 'button';
-        icon.className = 'copy-btn';
-        icon.icon = 'content_copy';
-        icon.setAttribute('aria-label', '复制代码');
-        b.replaceWith(icon);
+        const btn = document.createElement('m3e-icon-button');
+        btn.type = 'button';
+        btn.className = 'copy-btn';
+        // m3e-icon-button does NOT render its icon property (the slotted
+        // <m3e-icon> is what actually paints) — so give it a real child icon,
+        // the same way #send-btn carries its glyph. Setting .icon='content_copy'
+        // leaves a blank circle.
+        const ic = document.createElement('m3e-icon');
+        ic.setAttribute('name', 'content_copy');
+        btn.appendChild(ic);
+        btn.setAttribute('aria-label', '复制代码');
+        b.replaceWith(btn);
       });
     }
     // User stays a plain circle; pi (and errors) wear the M3 Expressive
@@ -1937,7 +2083,9 @@ function stage0Logic(wsUrl: string): string {
       const b = document.createElement('m3e-icon-button');
       b.type = 'button';
       b.className = 'copy-btn bubble-copy';
-      b.icon = 'content_copy';
+      const ic = document.createElement('m3e-icon');
+      ic.setAttribute('name', 'content_copy');
+      b.appendChild(ic);
       b.setAttribute('aria-label', '复制消息');
       el.appendChild(b);
     }
@@ -1958,9 +2106,10 @@ function stage0Logic(wsUrl: string): string {
     });
     function flashCopied(btn) {
       if (!btn) return;
-      btn.icon = 'check';
+      const ic = btn.querySelector('m3e-icon');
+      if (ic) ic.setAttribute('name', 'check');
       btn.classList.add('copied');
-      setTimeout(() => { btn.icon = 'content_copy'; btn.classList.remove('copied'); }, 1200);
+      setTimeout(() => { if (ic) ic.setAttribute('name', 'content_copy'); btn.classList.remove('copied'); }, 1200);
     }
     function fallbackCopy(text, btn) {
       try {
@@ -2014,6 +2163,10 @@ function stage0Logic(wsUrl: string): string {
     function makeThinkingEl(text, live) {
       const wrap = document.createElement('m3e-expansion-panel');
       wrap.className = 'thinking';
+      // The card draws its own chevron (.thinking-header::before, left of the
+      // label); m3e-expansion-panel would add a second one on the right.
+      // hide-toggle forwards to the inner m3e-expansion-header and drops it.
+      wrap.setAttribute('hide-toggle', '');
       const header = document.createElement('div');
       header.setAttribute('slot', 'header');
       header.className = 'thinking-header';
@@ -2073,6 +2226,8 @@ function stage0Logic(wsUrl: string): string {
       const wrap = document.createElement('m3e-expansion-panel');
       wrap.className = 'tool-call' + (isError ? ' error' : '');
       wrap.id = 'tool-' + toolCallId;
+      // Same as .thinking: the card's own ::before chevron is the only one.
+      wrap.setAttribute('hide-toggle', '');
       const header = document.createElement('div');
       header.setAttribute('slot', 'header');
       header.className = 'tool-header';
@@ -2180,13 +2335,17 @@ function stage0Logic(wsUrl: string): string {
     // ───────────── Stage 3: Toast + notif history ─────────────
     function showToast(message, level) {
       const prefix = level === 'error' ? '✕ ' : level === 'warning' ? '⚠ ' : '';
-      snackbar({
-        message: prefix + message,
-        placement: 'top',
-        closeable: true,
-        autoCloseDelay: 4000,
-      });
+      // Recorded first: the history panel must survive a CDN that will not load.
       recordNotif(message, level);
+      // The @m3e/web snackbar subpath exports the M3eSnackbar class, not a
+      // snackbar() function, so the call is M3eSnackbar.open(text, options).
+      // The options this used to pass (placement/closeable/autoCloseDelay) were
+      // mdui 2.x's shape and are silently ignored here — m3e's own names are
+      // duration/closeLabel. Loaded lazily so a CDN failure costs a toast, not
+      // the whole client.
+      import('https://esm.sh/@m3e/web@${M3E_VERSION}/snackbar')
+        .then((mod) => mod.M3eSnackbar.open(prefix + message, {duration: 4000}))
+        .catch(() => {});
     }
     function recordNotif(message, level) {
       notifHistory.unshift({message, level: level || 'info', ts: Date.now()});
@@ -2411,8 +2570,15 @@ function stage0Logic(wsUrl: string): string {
     }
     function syncSessionItem(it, s, cur) {
       it._sessionPath = s.path;
-      it.querySelector('.s-title').textContent = s.name || s.firstMessage || '（空会话）';
-      it.querySelector('.s-sub').textContent = fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
+      // The unsaved row is the session pi has not flushed to disk yet (a
+      // brand-new conversation): it has no timestamp or message count to show,
+      // and calling it 空会话 would read as some stale empty conversation
+      // instead of the one being typed into right now.
+      it.querySelector('.s-title').textContent =
+        s.name || s.firstMessage || (s.unsaved ? '（新会话·尚未保存）' : '（空会话）');
+      it.querySelector('.s-sub').textContent = s.unsaved
+        ? '当前会话 · 尚未写入磁盘'
+        : fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
       // toggleAttribute is a no-op when unchanged: the freshly clicked item
       // already carries native selected, so the indicator's grow animation
       // is never restarted by a data refresh.
@@ -2449,7 +2615,16 @@ function stage0Logic(wsUrl: string): string {
           it.append(ic, label);
           it.addEventListener('click', () => {
             drawer.start = false;
-            if (it.hasAttribute('selected') || !ws || ws.readyState !== 1) return;
+            if (!ws || ws.readyState !== 1) return;
+            // Compare against the SERVER's current session, never against the
+            // selected attribute. m3e-nav-menu-item marks the row that was
+            // clicked (selected + aria-current) from INSIDE its own shadow DOM,
+            // and that mutation lands before this host-level bubble listener
+            // runs — so an attribute check swallowed every real tap and no row
+            // could ever be switched (a synthetic el.click() bypasses the
+            // shadow internals and looks fine, which is how it hid). Path
+            // equality is the same fact with no timing trap.
+            if (it._sessionPath === sessionData.current) return;
             ws.send(JSON.stringify({ type: 'switch_session', path: it._sessionPath }));
             showToast('切换会话…', 'info');
           });
