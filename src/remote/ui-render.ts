@@ -115,7 +115,11 @@ export function renderModule(): string {
       }
       var ths = '';
       for (var c2 = 0; c2 < head.length; c2++) ths += '<th>' + renderInline(head[c2]) + '</th>';
-      return {html: '<table class="md-table"><thead><tr>' + ths + '</tr></thead><tbody>' + body + '</tbody></table>', next: i};
+      // Scroll container as the rounded plate (see .table-scroll in the
+      // stylesheet): it spans the bubble's content width, so a narrow table
+      // can never shrink the plate (a shrunk plate loses the concentric
+      // corner relation) while a genuinely wide one scrolls INSIDE it.
+      return {html: '<div class="table-scroll"><table class="md-table"><thead><tr>' + ths + '</tr></thead><tbody>' + body + '</tbody></table></div>', next: i};
     }
 
     // Block-level markdown for one text segment (no fences — those are split off by

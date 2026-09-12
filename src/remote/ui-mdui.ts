@@ -510,12 +510,15 @@ m3e-app-bar#top-bar {
     line-height: 1.55;
 }
 /* Prose buys the roomier 1.5rem/0.875rem inset via its own margins — the
-   bubble's padding stays code-block-tight so the concentric corner math is
-   untouched. Code blocks (div.code-block and headless pre) are deliberately
-   excluded: they keep the tight padded edge the radius buffers around. */
+   bubble's padding stays block-tight so the concentric corner math is
+   untouched. Code blocks (div.code-block and headless pre) AND tables are
+   deliberately excluded: a table keeps the tight padded edge the radius
+   buffers around, exactly like a code block, so both axes get the bubble's
+   0.75rem padding and its radius is the same --_code-r (32 − 12 = 20,
+   concentric with the bubble's corner). */
 .bubble.md > p, .bubble.md > ul, .bubble.md > ol, .bubble.md > blockquote,
 .bubble.md > h1, .bubble.md > h2, .bubble.md > h3,
-.bubble.md > h4, .bubble.md > h5, .bubble.md > h6, .bubble.md > table {
+.bubble.md > h4, .bubble.md > h5, .bubble.md > h6 {
     margin-left: 0.75rem; margin-right: 0.75rem;
 }
 .bubble.md > :first-child { margin-top: 0; }
@@ -635,30 +638,59 @@ m3e-app-bar#top-bar {
 .bubble.md pre code {
     background: transparent; padding: 0;
     font-size: inherit;
+    /* Zero the inline-chip radius too: as a block box it would otherwise
+       carry .bubble.md code's 0.25rem corners (invisible with a transparent
+       background, but it reads as a rounded box nested in the block). */
+    border-radius: 0;
+    /* Block-level inner box: while the code is an inline box, its half-leading
+       is unioned with the pre's OWN strut (a different font size), and their
+       baseline-aligned union made the line box 22px instead of --_code-line
+       (20px) — the single-line capsule then measured 42 instead of
+       2 × --_code-r (40). As a block it carries its own strut, so each line
+       is exactly --_code-line again and the capsule is exact. */
+    display: block;
+}
+/* Tables. The SCROLL CONTAINER — not the table — is the rounded plate, the
+   same pattern as .code-block. The reason is the corner math: the plate spans
+   the bubble's content width always, so the table can never shrink it. A
+   shrunk plate loses the concentric relation (its corners would sit at insets
+   the bubble's arcs don't answer: with fit-content a narrow table pulled the
+   right edge inward and the two 20px arcs no longer matched the bubble's 32px
+   one on both sides). A genuinely wide table still scrolls INSIDE the plate.
+   No inline margins (the prose-inset rule above leaves tables out), so the
+   gap is the bubble's 0.75rem padding on both axes and the radius is
+   --_code-r = 32 − 12: the arcs then share the bubble corner's centre. */
+/* Two classes (not .bubble.md …): the edge-zeroing rules above
+   (.bubble.md > :first-child / :last-of-type) are three-class specific and
+   must out-rank this one, exactly like .bubble .code-block — a table at the
+   bubble's top/bottom edge then sits 12px from it on BOTH axes and is
+   concentric; a mid-content one keeps the block rhythm. */
+.bubble .table-scroll {
+    overflow-x: auto;
+    border-radius: var(--_code-r);
+    margin: 0.6em 0;
 }
 .bubble.md table {
     border-collapse: collapse;
-    margin-block: 0.6em;
     font-size: 0.9em;
-    /* A wide table on a narrow (phone) viewport must scroll INSIDE the
-       bubble, not stretch past it. display:block turns the table into a
-       scrollable box; fit-content keeps narrow tables at their natural
-       width so only genuinely wide ones grow into a scroll. (Unbreakable
-       tokens — long paths, code spans — are what force the overflow.) */
-    display: block;
-    width: fit-content;
-    max-width: 100%;
-    overflow-x: auto;
-    border-radius: var(--md-sys-shape-corner-small);
+    /* Fill the plate: narrow tables stretch so every band reaches the rounded
+       edge on both sides; wide ones grow past 100% (a table never shrinks
+       below min-content) and the wrapper scrolls them. (Unbreakable tokens —
+       long paths, code spans — are what force the overflow.) */
+    width: 100%;
 }
+/* Bands, not hairlines: every row carries a shade, and no shade equals the
+   bubble behind the plate. A transparent row (the old body cells were) shows
+   the bubble's own colour and the plate's rounded corners vanish with it —
+   the top and bottom rows must be painted for the shape to read. */
 .bubble.md th, .bubble.md td {
     border: none;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
     padding: 0.4em 0.7em;
     text-align: left;
 }
-.bubble.md tr:last-child td { border-bottom: none; }
-.bubble.md th { background: var(--md-sys-color-surface-container); font-weight: 600; }
+.bubble.md th { background: var(--md-sys-color-surface-container-highest); font-weight: 600; }
+.bubble.md tbody tr:nth-child(odd) td { background: var(--md-sys-color-surface-container); }
+.bubble.md tbody tr:nth-child(even) td { background: var(--md-sys-color-surface-container-lowest); }
 .bubble.md hr {
     border: 0;
     border-top: 1px solid var(--md-sys-color-outline-variant);
@@ -939,7 +971,15 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
     width: 100%;
     box-sizing: border-box;
 }
-#input { flex: 1; min-width: 0; width: 100%; }
+/* The filled variant reserves the floating-label row at the TOP of its content
+   box (24px) while .base keeps only 8px below the text. This field has no label,
+   so nothing ever fills that row and the text sat 8px below the optical centre
+   (measured above/below = 24/8 inside the 56px visible field). A margin PAIR —
+   not a transform, which would blur the glyphs — lifts the text by the
+   imbalance (24 − 8) / 2 = 8px and leaves the field's own height untouched;
+   that also holds when the autosize component grows it, where the text block
+   then sits 16/16. */
+#input { flex: 1; min-width: 0; width: 100%; margin-top: -8px; margin-bottom: 8px; }
 /* The flex child of the bar is the m3e-form-field WRAPPER, not the inner
    #input textarea. The wrapper must grow to fill the row; otherwise it keeps
    its intrinsic width and leaves a gap beside the send button. (#input's own
@@ -1098,22 +1138,55 @@ m3e-card#status-panel {
     font-size: 0.9rem;
 }
 .settings-row { gap: 0.5rem; }
+/* Row labels never fold. CJK text may break between any two characters, so a
+   bare <span> label's min-content is ONE glyph: in these flex rows the label
+   then lost the shrink race to its control (the accent picker's max-content —
+   6 dots plus the full-width extract button — is wider than the row) and
+   「主题色」 folded onto two lines. nowrap lifts the label's min-content to its
+   whole width, which fits: the picker itself already wraps the extract button
+   onto its own line. Scoped to the labels so no control inherits nowrap. */
+#notif-toggle-row > span,
+.settings-row > :first-child,
+#thinking-collapse-row > :first-child { white-space: nowrap; }
 #settings-title { font-weight: 600; }
 #notif-title { font-weight: 600; font-size: 0.9rem; }
 
-/* Theme-color picker: circular seed-color dots. Each dot shows its literal
-   seed — a swatch is the one place a hardcoded color is the content, not
-   the chrome. The selection ring re-reads the live primary token, so it
-   follows whichever theme is currently applied. */
-#accent-list { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
-/* "Extract from image" sits on its own full-width row so the narrow panel's
-   overflow:hidden can't clip it beside the seed dots. */
-#accent-extract { flex: 1 1 100%; justify-content: center; }
-.accent-dot {
+/* Theme-color picker: circular seed-color dots, right-aligned so the palette
+   ends flush with the panel's padding like every other row's control. Each
+   dot shows its literal seed — a swatch is the one place a hardcoded color is
+   the content, not the chrome. The selection ring re-reads the live primary
+   token, so it follows whichever theme is currently applied. */
+#accent-list {
+    display: flex; align-items: center; flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+/* The image picker is the palette's last dot, not a separate button beside
+   it: one geometry rule covers both kinds, so the row reads as seven swatches.
+   It carries its own class because the click handler below treats every
+   .accent-dot as a seed and would otherwise reset the accent to the default. */
+.accent-dot,
+.accent-image {
     flex: none;
     width: 1.35rem; height: 1.35rem;
     padding: 0; border: none; border-radius: 50%;
     cursor: pointer;
+}
+/* It has no colour to show, so it is an outlined dot with the image glyph:
+   the ring says "same family", the glyph says "pick one from a picture". */
+.accent-image {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none;
+    color: var(--md-sys-color-on-surface-variant);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 50%, transparent);
+    transition: box-shadow 150ms, color 150ms;
+}
+.accent-image:hover {
+    color: var(--md-sys-color-on-surface);
+    box-shadow: inset 0 0 0 1px var(--md-sys-color-outline);
+}
+.accent-image m3e-icon { font-size: 0.8rem; }
+.accent-dot {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 50%, transparent);
     transition: box-shadow 150ms;
 }
@@ -1196,11 +1269,24 @@ m3e-list#notif-list {
 #cmd-suggestions m3e-list-item {
     cursor: pointer;
     font-size: 0.9rem;
-    --shape-corner-rounded: 1.25rem;
-    /* Same two-line recipe as the model menu: bold name, regular detail.
-       The shadow parts read these typescale tokens from the host. */
-    --md-sys-typescale-body-large-weight: 600;
-    --md-sys-typescale-body-medium-weight: 400;
+    /* m3e-list-item observes no attributes, so mdui's rounded variant did nothing:
+       the row painted square and full-bleed inside this 28px panel. The
+       component's own container tokens are the supported lever — shape
+       1.25rem = the panel's 28 minus the 8px padding, so the row plate is
+       concentric with the panel corner — plus a container colour for the
+       keyboard-selected row. */
+    --m3e-list-item-container-shape: 1.25rem;
+    --m3e-list-item-container-color: transparent;
+}
+#cmd-suggestions m3e-list-item.active {
+    --m3e-list-item-container-color: var(--md-sys-color-surface-container-highest);
+}
+/* Slotted row text (attributes are ignored): bold name + muted detail, the
+   same two-line recipe the model menu shows. */
+#cmd-suggestions .cmd-name { font-weight: 600; }
+#cmd-suggestions .cmd-desc {
+    font-size: 0.78rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 #cmd-suggestions m3e-list-item + m3e-list-item { margin-top: 0.1rem; }
 
@@ -1485,7 +1571,7 @@ export function mduiHtml(wsUrl: string): string {
         <button type="button" class="accent-dot" data-accent="#EF6C00" style="background:#EF6C00" title="橙色" aria-label="橙色"></button>
         <button type="button" class="accent-dot" data-accent="#D32F2F" style="background:#D32F2F" title="红色" aria-label="红色"></button>
         <button type="button" class="accent-dot" data-accent="#7B1FA2" style="background:#7B1FA2" title="紫色" aria-label="紫色"></button>
-        <m3e-button id="accent-extract" variant="tonal" class="accent-extract">从图片提取</m3e-button>
+        <button type="button" id="accent-extract" class="accent-image" title="从图片提取主题色" aria-label="从图片提取主题色"><m3e-icon name="image"></m3e-icon></button>
         <input type="file" id="accent-wallpaper" accept="image/*" hidden>
       </div>
     </div>
@@ -1656,7 +1742,12 @@ function stage0Logic(wsUrl: string): string {
         error_outline: ['M11 15h2v2h-2v-2zm0-8h2v6h-2V7zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z',
                 'M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z'],
         auto_awesome: ['m19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25zm0 6-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25zm-7.5-5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zm-1.51 3.49L9 15.17l-.99-2.18L5.83 12l2.18-.99L9 8.83l.99 2.18 2.18.99-2.18.99z',
-                'm19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z']
+                'm19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z'],
+        // The theme picker's image swatch is an outlined dot, so it needs a
+        // glyph that says "from a picture". Paths from @material-design-icons/
+        // svg (image), same 24×24 grid as the rest.
+        image: ['M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86-3 3.87L9 13.14 6 17h12l-3.86-5.14z',
+                'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z']
       };
       for (const name in iconPaths) {
         m.registerIcon(name, 'outlined', {
@@ -2672,13 +2763,22 @@ function stage0Logic(wsUrl: string): string {
       const list = document.createElement('m3e-list');
       cmdActive.forEach((cmd, i) => {
         const el = document.createElement('m3e-list-item');
-        // mdui's native rounded variant: the row (and its ripple/state
-        // layer) becomes a rounded rect inset from the panel — the model
-        // menu's recipe, not a full-bleed highlight.
-        el.setAttribute('rounded', '');
-        if (i === cmdIndex) el.setAttribute('active', '');
-        el.setAttribute('headline', cmd.name);
-        el.setAttribute('description', cmd.desc);
+        // m3e-list-item observes NO attributes (observedAttributes is empty),
+        // so mdui's rounded/active/headline/description were all ignored: the
+        // row rendered empty and square inside the rounded panel. Feed it
+        // through its slots instead — default slot = label, supporting-text =
+        // second line — and let the stylesheet's --m3e-list-item-container-*
+        // tokens give it the rounded plate + highlight (concentric with the
+        // panel: 28 − 8 = 20).
+        el.className = 'cmd-row' + (i === cmdIndex ? ' active' : '');
+        const label = document.createElement('span');
+        label.className = 'cmd-name';
+        label.textContent = cmd.name;
+        const desc = document.createElement('span');
+        desc.className = 'cmd-desc';
+        desc.setAttribute('slot', 'supporting-text');
+        desc.textContent = cmd.desc;
+        el.append(label, desc);
         el.addEventListener('mousedown', (e) => { e.preventDefault(); pickCmd(i); });
         list.appendChild(el);
       });
