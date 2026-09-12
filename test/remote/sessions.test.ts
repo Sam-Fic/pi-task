@@ -3,7 +3,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {test, expect} from 'bun:test'
 import {SessionManager} from '@earendil-works/pi-coding-agent'
-import {listSessionSummaries} from '../../src/remote/sessions.js'
+import {listSessionSummaries, withCurrentSession} from '../../src/remote/sessions.js'
 
 /** appendMessage demands pi's full AgentMessage metadata (api/provider/usage…);
  *  the persistence layer only serializes what it gets, so the test literals
@@ -43,4 +43,46 @@ test('lists the project sessions newest-first with sidebar fields', async () => 
 test('an unreadable session directory degrades to an empty list', async () => {
     const out = await listSessionSummaries(process.cwd(), join(tmpdir(), 'pi-remote-nope-404'))
     expect(out).toEqual([])
+})
+
+// ─── withCurrentSession: a brand-new conversation has no file to be scanned ──
+
+test('the active session is listed even before pi has written its file', () => {
+    const scanned = [
+        {
+            path: '/s/old.jsonl',
+            name: null,
+            firstMessage: 'old',
+            modified: '2026-01-01T00:00:00.000Z',
+            messageCount: 2
+        }
+    ]
+    const merged = withCurrentSession(scanned, '/s/cur.jsonl')
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toMatchObject({
+        path: '/s/cur.jsonl',
+        firstMessage: '',
+        messageCount: 0,
+        unsaved: true
+    })
+    // Newest-first ordering is the drawer's contract; the live session leads.
+    expect(merged[1]).toBe(scanned[0]!)
+    // The scan's array is the caller's — the merge must not mutate it.
+    expect(scanned).toHaveLength(1)
+})
+
+test('a current session the scan already returned is left untouched', () => {
+    const scanned = [
+        {
+            path: '/s/cur.jsonl',
+            name: 'named',
+            firstMessage: 'hi',
+            modified: '2026-01-01T00:00:00.000Z',
+            messageCount: 2
+        }
+    ]
+    // Same array identity: no synthesized row, no `unsaved` marker.
+    expect(withCurrentSession(scanned, '/s/cur.jsonl')).toBe(scanned)
+    // Unknown cwd/session (no path): nothing to add either.
+    expect(withCurrentSession(scanned, null)).toBe(scanned)
 })

@@ -635,13 +635,20 @@ test('the getSessions callback builds the sidebar frame from the live state', as
     )
     await Bun.sleep(5)
     // No sessionDir override in production: the scan targets the default dir
-    // for this cwd, which does not exist here — an empty list, current marked.
+    // for this cwd, which does not exist here — so the frame's only row is the
+    // synthesized CURRENT session (pi has not flushed /sessions/cur.jsonl to
+    // disk yet). Without it a brand-new conversation is missing from the
+    // sidebar entirely, with nothing marked current.
     const frame = (await started[0]!.getSessions?.()) as {
         type: string
         current: string | null
-        sessions: unknown[]
+        sessions: {path: string; unsaved?: boolean}[]
     }
-    expect(frame).toMatchObject({type: 'sessions', current: '/sessions/cur.jsonl', sessions: []})
+    expect(frame).toMatchObject({
+        type: 'sessions',
+        current: '/sessions/cur.jsonl',
+        sessions: [{path: '/sessions/cur.jsonl', unsaved: true}]
+    })
 })
 
 test('a sidebar pick dispatches switchSession and the rebind re-marks the current row', async () => {

@@ -35,3 +35,33 @@ export async function listSessionSummaries(
         return []
     }
 }
+
+/**
+ * The listed sessions with the ACTIVE one guaranteed present.
+ *
+ * pi writes a session file only once the session holds an ASSISTANT message, so
+ * a brand-new conversation (and one whose turns are still all user-side) has a
+ * sessionFile that does not exist on disk: `SessionManager.list` cannot see it,
+ * and the sidebar ends up with no row marked current — the conversation the user
+ * is actually in would be the one entry the history is missing. Synthesize that
+ * row (flagged `unsaved`) so the list always answers "where am I". It is placed
+ * first and keyed by path, so the real row replaces it in place the moment pi
+ * flushes the file.
+ */
+export function withCurrentSession(
+    sessions: SessionSummary[],
+    current: string | null
+): SessionSummary[] {
+    if (!current || sessions.some(s => s.path === current)) return sessions
+    return [
+        {
+            path: current,
+            name: null,
+            firstMessage: '',
+            modified: new Date().toISOString(),
+            messageCount: 0,
+            unsaved: true
+        },
+        ...sessions
+    ]
+}

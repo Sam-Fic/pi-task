@@ -17,11 +17,11 @@ import {
 } from './bridge.js'
 import {setupEvents} from './events.js'
 import {seedFromSession} from './backfill.js'
-import {listSessionSummaries} from './sessions.js'
+import {listSessionSummaries, withCurrentSession} from './sessions.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
 import {resolveModel, specOf} from '../shared/model-resolve.js'
-import type {ModelsMessage} from './protocol.js'
+import type {ModelsMessage, SessionsMessage} from './protocol.js'
 import {qrLines} from './qr.js'
 import {startServer, formatAddresses} from './server.js'
 import {
@@ -147,6 +147,23 @@ export function registerRemote(pi: ExtensionAPI): void {
         if (frame) getBridge().broadcast(frame)
     }
 
+    /**
+     * The sidebar's frame: this project's persisted sessions, newest-first, with
+     * the ACTIVE one guaranteed present (see withCurrentSession — a session pi
+     * has not flushed to disk yet is invisible to the scan). cwd/sessionPath are
+     * re-seeded at every session_start, so this reads current state at call time;
+     * null while the cwd is still unknown (no frame at all).
+     */
+    async function buildSessionsFrame(): Promise<SessionsMessage | null> {
+        if (!S.cwd) return null
+        const sessions = await listSessionSummaries(S.cwd)
+        return {
+            type: 'sessions',
+            current: S.sessionPath,
+            sessions: withCurrentSession(sessions, S.sessionPath)
+        }
+    }
+
     async function ensureServer(): Promise<ServerHandle> {
         if (S.server) return S.server
         S.server = await startServer(
@@ -164,6 +181,14 @@ export function registerRemote(pi: ExtensionAPI): void {
                                 newCtx.sendUserMessage(msg, opts)
                             :   newCtx.sendUserMessage(msg))
                         }
+                        // The sidebar's "current" row must follow the session
+                        // here too: without a fresh frame the previous
+                        // conversation stays marked — and tapping a marked row
+                        // is a no-op — while the brand-new session is not in the
+                        // scan yet, so nothing else would move the marker.
+                        void buildSessionsFrame()
+                            .then(frame => frame && getState().sink(frame))
+                            .catch(() => {})
                     })
                     return
                 }
@@ -210,14 +235,7 @@ export function registerRemote(pi: ExtensionAPI): void {
             // The session sidebar: the project's persisted sessions with the
             // active one marked. cwd/sessionPath are re-seeded at every
             // session_start, so this reads current state at call time.
-            async () => {
-                if (!S.cwd) return null
-                return {
-                    type: 'sessions' as const,
-                    current: S.sessionPath,
-                    sessions: await listSessionSummaries(S.cwd)
-                }
-            },
+            buildSessionsFrame,
             // Sidebar pick → switch the live session. The replacement re-runs
             // registration (whose session_start resets + backfills the target
             // transcript into the browser); here we only adopt the fresh send
@@ -231,10 +249,8 @@ export function registerRemote(pi: ExtensionAPI): void {
                     }
                     S.sessionPath = newCtx.sessionManager.getSessionFile() ?? null
                     S.cwd = newCtx.sessionManager.getCwd()
-                    void listSessionSummaries(S.cwd)
-                        .then(sessions =>
-                            getState().sink({type: 'sessions', current: S.sessionPath, sessions})
-                        )
+                    void buildSessionsFrame()
+                        .then(frame => frame && getState().sink(frame))
                         .catch(() => {})
                 })
         )

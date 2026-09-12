@@ -75,6 +75,11 @@ export interface SessionsMessage {
         /** ISO timestamp of the last write. */
         modified: string
         messageCount: number
+        /** True only for the synthesized row of the ACTIVE session while pi has
+         *  not flushed its file yet (a brand-new conversation, or one whose only
+         *  turns are user-side). Such a row has no timestamp or message count
+         *  worth showing — the browser labels it instead. */
+        unsaved?: boolean
     }[]
 }
 
