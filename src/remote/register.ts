@@ -254,15 +254,16 @@ export function registerRemote(pi: ExtensionAPI): void {
                         .catch(() => {})
                 }),
             // Sidebar trash → delete the persisted session file. The CURRENT
-            // session is refused outright: pi holds that file open and keeps
-            // appending to it, so removing it under the live session would
-            // lose everything typed afterwards (the browser hides the button
-            // on that row — this is the server-side half of the same guard).
-            // After a successful unlink the refreshed frame re-marks every
-            // sidebar; the deleted row simply stops being in the scan.
+            // session is deletable too, but only while the agent is idle: a
+            // run keeps appending to the file, so unlinking mid-run would
+            // lose everything the replies still write (the browser greys the
+            // button out for the same window — this is the enforcing half).
+            // After the unlink the current session continues in memory; the
+            // refreshed frame re-synthesizes it as an unsaved row until pi
+            // flushes a fresh file on the next assistant message.
             path => {
-                if (path === S.sessionPath) {
-                    publishNotify('当前会话不能删除', 'warning')
+                if (getState().agentRunning) {
+                    publishNotify('模型正在回复，暂时无法删除', 'warning')
                     return
                 }
                 if (!S.cwd) {
@@ -271,7 +272,13 @@ export function registerRemote(pi: ExtensionAPI): void {
                 }
                 void deleteSessionFile(path, S.cwd)
                     .then(out => {
-                        if (!out.ok) {
+                        // The current session may have no file on disk yet
+                        // (pi flushes on the first assistant message): the
+                        // scan allow-list then reports it unknown, but "no
+                        // persisted file" IS the requested end state.
+                        if (!out.ok &&
+                            !(out.reason === 'unknown_session' && path === S.sessionPath)
+                        ) {
                             publishNotify(
                                 out.reason === 'unknown_session' ?
                                     '会话不存在或已被删除'

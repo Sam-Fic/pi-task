@@ -235,10 +235,10 @@ html, body {
 /* Per-row delete: a 28px icon button parked in the row plate's right padding,
    revealed on row hover or keyboard focus, always visible on hover-less
    (touch) devices — the same treatment the code block's copy button gets.
-   Absent on the CURRENT row entirely (syncSessionItem skips it): pi holds
-   that file open. It must stay INSIDE the slotted .s-label's box: the
-   component's internal .label wrapper clips overflow, so a negative right
-   offset would have its right half amputated. */
+   Present on every row; the CURRENT row's button is disabled while the agent
+   is replying (the server refuses that window too). It must stay INSIDE the
+   slotted .s-label's box: the component's internal .label wrapper clips
+   overflow, so a negative right offset would have its right half amputated. */
 #session-list .s-del {
     --_d: 1.75rem;
     position: absolute;
@@ -267,6 +267,15 @@ html, body {
 @media (hover: none) {
     #session-list .s-del { opacity: 1; }
 }
+/* Disabled (current row mid-run): stay faded even on row hover, and the
+   error hover tint is off — it must read as unavailable, not armed. */
+#session-list .s-del:disabled,
+#session-list m3e-nav-menu-item:hover .s-del:disabled,
+#session-list m3e-nav-menu-item:focus-within .s-del:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+#session-list .s-del:disabled:hover { color: var(--md-sys-color-on-surface-variant); }
 /* A destructive confirm reads in the error palette: the filled button paints
    --md-sys-color-primary, so swap the pair rather than restyle the component. */
 #session-delete-confirm {
@@ -2764,15 +2773,13 @@ function stage0Logic(wsUrl: string): string {
       // already carries native selected, so the indicator's grow animation
       // is never restarted by a data refresh.
       it.toggleAttribute('selected', !!cur);
-      // The trash button sits on every row except the CURRENT one (the server
-      // refuses that path anyway — pi keeps the file open and appends to it,
-      // so deleting it under the live session would lose everything typed
-      // afterwards). Managed here, not at row-creation time, because which
-      // row is current changes without the row set changing.
+      // The trash button sits on every row. The CURRENT row keeps it
+      // disabled while the model is replying (the server refuses the same
+      // window — a run keeps appending to the file). Managed here, not at
+      // row-creation time, because which row is current — and whether the
+      // agent is running — both change without the row set changing.
       let del = it.querySelector('.s-del');
-      if (cur) {
-        if (del) del.remove();
-      } else if (!del) {
+      if (!del) {
         del = document.createElement('button');
         del.type = 'button';
         del.className = 's-del';
@@ -2789,6 +2796,20 @@ function stage0Logic(wsUrl: string): string {
           openSessionDelete(it);
         });
         it.querySelector('.s-label').appendChild(del);
+      }
+      del.disabled = !!cur && agentRunning;
+      del.title = del.disabled ? '模型正在回复，暂时无法删除' : '删除会话';
+    }
+    // The current row's trash greys out for the whole agent run and comes
+    // back when the reply ends. Called from every agentRunning flip and at
+    // the end of renderSessions, so a data refresh re-derives the state too.
+    function syncDeleteStates() {
+      for (const it of sessionList.querySelectorAll('m3e-nav-menu-item')) {
+        const del = it.querySelector('.s-del');
+        if (!del) continue;
+        const cur = it._sessionPath === sessionData.current;
+        del.disabled = cur && agentRunning;
+        del.title = del.disabled ? '模型正在回复，暂时无法删除' : '删除会话';
       }
     }
     function renderSessions() {
@@ -2843,6 +2864,7 @@ function stage0Logic(wsUrl: string): string {
         return;
       }
       sessions.forEach((s, i) => syncSessionItem(existing[i], s, s.path === sessionData.current));
+      syncDeleteStates();
     }
     // ── Session delete: the trash button opens the dialog, the two buttons
     // close it, and the confirm one also fires delete_session for the row
@@ -3139,7 +3161,7 @@ function stage0Logic(wsUrl: string): string {
         overlay.classList.remove('show');
         reconnectDelay = 1000;
         connected = true;
-        refreshComposer(); setSendBtn();
+        refreshComposer(); setSendBtn(); syncDeleteStates();
         if (notifyEnabled()) subscribePush().catch(() => {});
       });
       sock.addEventListener('message', (e) => {
@@ -3210,7 +3232,7 @@ function stage0Logic(wsUrl: string): string {
           renderHeld();
           turnHadContent = !!(m.live && m.live.parts && m.live.parts.length);
           if (m.prompt) showPrompt(m.prompt);
-          refreshComposer(); setSendBtn();
+          refreshComposer(); setSendBtn(); syncDeleteStates();
           break;
         }
         case 'models':
@@ -3235,7 +3257,7 @@ function stage0Logic(wsUrl: string): string {
           turnHadContent = false;
           agentRunning = true;
           setModelName(m.model);
-          refreshComposer(); setSendBtn();
+          refreshComposer(); setSendBtn(); syncDeleteStates();
           break;
         case 'thinking_delta':
           turnHadContent = true;
@@ -3321,7 +3343,7 @@ function stage0Logic(wsUrl: string): string {
           if (turnHadContent) addTurnTime(Date.now(), 'assistant');
           turnHadContent = false;
           agentRunning = false;
-          refreshComposer(); setSendBtn();
+          refreshComposer(); setSendBtn(); syncDeleteStates();
           break;
         case 'agent_end':
           finalizeThinking();
@@ -3330,7 +3352,7 @@ function stage0Logic(wsUrl: string): string {
           turnHadContent = false;
           agentRunning = false;
           setModelName(m.model);
-          refreshComposer(); setSendBtn();
+          refreshComposer(); setSendBtn(); syncDeleteStates();
           setContextBar(m.contextUsage);
           break;
         case 'context':
@@ -3357,7 +3379,7 @@ function stage0Logic(wsUrl: string): string {
           turnHadContent = false;
           closePrompt();
           agentRunning = false;
-          refreshComposer(); setSendBtn();
+          refreshComposer(); setSendBtn(); syncDeleteStates();
           taskWidgetLines = null; taskWidgetData = null;
           renderWidgets();
           paintCtx(0);
