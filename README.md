@@ -22,15 +22,11 @@
 
 <img src="./assets/remote-ui-preview.png" alt="pi-task remote UI — Material 3 mobile-first interface with session sidebar, chat bubbles, code blocks, thinking cards, tool cards, command suggestions, and theme picker" height="400">
 
-**Material 3 / mdui-based mobile-first remote UI (v0.40.18+)**
+**Material 3 remote UI**
 
 </div>
 
-This fork diverges from [`mjasnikovs/pi-task`](https://github.com/mjasnikovs/pi-task)
-at the `v0.40.7` tag (merge base `4d151b2`). All 74 fork-only commits focus on a
-single goal: **replacing the legacy remote web UI with a Material 3 / mdui-based
-mobile-first interface**. Upstream docs-quality commits (v0.40.8–v0.40.18) have
-been merged in; they are not listed here.
+This fork **replacing the legacy remote web UI with a Material 3 interface**.
 
 ### What changed
 
@@ -38,7 +34,6 @@ been merged in; they are not listed here.
 
 - Deleted `src/remote/ui.ts`, `ui-script.ts`, and `ui-styles.ts` (1,772 lines of
   hand-rolled widgets). Added `src/remote/ui-mdui.ts` (3,025 lines) built on
-  [mdui 2.x](https://www.npmjs.com/package/mdui) and
   [M3E components](https://matraic.github.io/m3e).
 - The new UI ships a scroll-to-collapse top app bar, a streaming context bar
   that flattens at rest and waves while active, a capsule send button with
@@ -50,6 +45,10 @@ been merged in; they are not listed here.
   between persisted sessions and backfilling transcripts on reconnect.
 - A session sidebar lists all stored sessions; tapping one restores the full
   transcript without a server round-trip.
+- Sessions can be deleted from the sidebar: a trash button on each row (hover
+  or keyboard focus on desktop, always visible on touch) opens a confirm
+  dialog; the server refuses the current session and only honours paths the
+  session scan itself returned.
 
 **Model picker, theme picker, and command suggestions.**
 
@@ -74,26 +73,6 @@ been merged in; they are not listed here.
 - Scroll-to-bottom FAB sits in `tertiary-container` with a smooth rotation
   animation; the initial rotation angle is tuned for the resting state.
 - A QR overlay showing the remote URL appears on startup.
-
-**Robustness.**
-
-- A throwing WebSocket handler degrades to a toast instead of crashing the
-  process (`uncaughtException`).
-- The context progress bar works even when the m3e CDN fails.
-- Model switching targets the current pi instance, not the one the server
-  captured at startup.
-- A fresh command context is bootstrapped so brand-new sessions can switch
-  models immediately.
-
-### Files touched (fork-only, 65 total)
-
-| Area | Files | Key changes |
-| --- | --- | --- |
-| **Remote UI** | `src/remote/ui-mdui.ts` (new, +3,025), `ui-render.ts`, `ui.ts` / `ui-script.ts` / `ui-styles.ts` (removed) | Full UI rewrite on mdui + M3E |
-| **Session management** | `src/remote/sessions.ts` (new), `backfill.ts` (new), `history.ts`, `protocol.ts`, `register.ts`, `server.ts`, `bridge.ts` | Persisted session switching, transcript backfill, protocol extensions |
-| **Remote tests** | `test/remote/*.test.ts` (8 files, +860 lines) | Coverage for backfill, sessions, protocol, server, register-server, bridge |
-| **Config / tooling** | `package.json`, `.gitignore` | New dependencies, ignore rules |
-| **Upstream merge** | `scripts/docs-*.ts`, `src/workers/docs-*.ts`, `src/task/*.ts`, `src/shared/child-output.ts`, etc. | Merged from upstream v0.40.8–v0.40.18 (not fork-authored) |
 
 ---
 
