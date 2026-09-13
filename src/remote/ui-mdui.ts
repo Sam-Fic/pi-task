@@ -2959,6 +2959,8 @@ function stage0Logic(wsUrl: string): string {
       const cmd = cmdActive[i];
       if (!cmd) return;
       inputEl.value = cmd.name + ' ';
+      // Same autosize catch-up as sendMessage: value was set programmatically.
+      inputEl.dispatchEvent(new Event('input'));
       cmdActive = []; cmdIndex = -1; renderSuggestions();
       inputEl.focus();
     }
@@ -3010,6 +3012,10 @@ function stage0Logic(wsUrl: string): string {
       if (!text || !ws || ws.readyState !== 1) return;
       ws.send(JSON.stringify({ type: 'message', text }));
       inputEl.value = '';
+      // The autosize component only recomputes on the textarea's input event,
+      // which a programmatic value set never fires — dispatch one so the box
+      // shrinks back to min-rows instead of staying at its old height.
+      inputEl.dispatchEvent(new Event('input'));
       cmdActive = []; cmdIndex = -1; renderSuggestions();
       if (text.startsWith('/')) return;
       if (!agentRunning && !runHolding) {
@@ -3039,6 +3045,8 @@ function stage0Logic(wsUrl: string): string {
       activePromptId = null;
       if (promptCard.open) promptCard.open = false;
       promptInput.value = '';
+      // Same autosize catch-up as sendMessage: value was set programmatically.
+      promptInput.dispatchEvent(new Event('input'));
       promptInput.style.display = 'none';
       promptRec.style.display = 'none';
       activeRecommended2 = '';
@@ -3096,6 +3104,8 @@ function stage0Logic(wsUrl: string): string {
       promptRec.style.display = 'none';
       promptInput.style.display = 'block';
       promptInput.value = '';
+      // Same autosize catch-up as sendMessage: value was set programmatically.
+      promptInput.dispatchEvent(new Event('input'));
       renderButtons([
         makeBtn('Submit', 'primary', () => answer(promptInput.value)),
         makeBtn('Back', 'secondary', showRecommendation)
@@ -3136,6 +3146,8 @@ function stage0Logic(wsUrl: string): string {
         promptRec.style.display = 'none';
         promptInput.style.display = 'block';
         promptInput.value = '';
+        // Same autosize catch-up as sendMessage: value was set programmatically.
+        promptInput.dispatchEvent(new Event('input'));
         const buttons = [makeBtn('Submit', 'primary', () => answer(promptInput.value))];
         if (msg.allowSkip) buttons.push(makeBtn('Skip', 'secondary', () => answer('')));
         renderButtons(buttons);
