@@ -143,7 +143,11 @@ export async function startServer(
      *  async (the scan reads every session file). Returning null omits it. */
     getSessions?: () => SessionsMessage | null | Promise<SessionsMessage | null>,
     /** Switch the active session (browser sidebar pick). */
-    onSwitchSession?: (path: string) => void
+    onSwitchSession?: (path: string) => void,
+    /** Delete a persisted session (browser sidebar trash). The callback owns
+     *  every check (current-session guard, scan allow-list) and every
+     *  consequence (file removal, list refresh, user-facing notice). */
+    onDeleteSession?: (path: string) => void
 ): Promise<ServerHandle> {
     const ips = getLocalIPs()
     const ip = ips.primary
@@ -296,6 +300,10 @@ export async function startServer(
                 }
                 if (msg.type === 'switch_session') {
                     onSwitchSession?.(msg.path)
+                    return
+                }
+                if (msg.type === 'delete_session') {
+                    onDeleteSession?.(msg.path)
                     return
                 }
                 // type === 'message': ignore while a prompt is pending (composer is

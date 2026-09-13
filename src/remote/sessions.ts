@@ -7,6 +7,7 @@
 // that onto the wire shape the sidebar renders, so the browser never needs to
 // know where sessions live.
 
+import {unlink} from 'node:fs/promises'
 import {SessionManager} from '@earendil-works/pi-coding-agent'
 import type {SessionsMessage} from './protocol.js'
 
@@ -64,4 +65,40 @@ export function withCurrentSession(
         },
         ...sessions
     ]
+}
+
+/**
+ * Delete one persisted session file.
+ *
+ * The allow-list is the scan itself: a WS client can send any path, so the
+ * request is only honoured when `SessionManager.list` actually returned it —
+ * pi never lists anything outside the session directory or anything that is
+ * not a session file, which rules out arbitrary-file deletion without
+ * replicating pi's directory encoding here (getDefaultSessionDir is not
+ * re-exported from the package root). Cost is one extra scan per delete,
+ * same budget as the refresh that follows it.
+ *
+ * A file vanishing between the scan and the unlink (raced with pi's own
+ * flush, or deleted from another client) still ends in the requested state,
+ * so ENOENT counts as success.
+ */
+export async function deleteSessionFile(
+    path: string,
+    cwd: string,
+    sessionDir?: string
+): Promise<{ok: true} | {ok: false; reason: 'unknown_session' | 'failed'}> {
+    let sessions: Awaited<ReturnType<typeof SessionManager.list>>
+    try {
+        sessions = await SessionManager.list(cwd, sessionDir)
+    } catch {
+        return {ok: false, reason: 'failed'}
+    }
+    if (!sessions.some(s => s.path === path)) return {ok: false, reason: 'unknown_session'}
+    try {
+        await unlink(path)
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {ok: true}
+        return {ok: false, reason: 'failed'}
+    }
+    return {ok: true}
 }

@@ -17,7 +17,7 @@ import {
 } from './bridge.js'
 import {setupEvents} from './events.js'
 import {seedFromSession} from './backfill.js'
-import {listSessionSummaries, withCurrentSession} from './sessions.js'
+import {deleteSessionFile, listSessionSummaries, withCurrentSession} from './sessions.js'
 import {reset, addUserTurn, setHeld, getState} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
 import {resolveModel, specOf} from '../shared/model-resolve.js'
@@ -252,7 +252,41 @@ export function registerRemote(pi: ExtensionAPI): void {
                     void buildSessionsFrame()
                         .then(frame => frame && getState().sink(frame))
                         .catch(() => {})
-                })
+                }),
+            // Sidebar trash → delete the persisted session file. The CURRENT
+            // session is refused outright: pi holds that file open and keeps
+            // appending to it, so removing it under the live session would
+            // lose everything typed afterwards (the browser hides the button
+            // on that row — this is the server-side half of the same guard).
+            // After a successful unlink the refreshed frame re-marks every
+            // sidebar; the deleted row simply stops being in the scan.
+            path => {
+                if (path === S.sessionPath) {
+                    publishNotify('当前会话不能删除', 'warning')
+                    return
+                }
+                if (!S.cwd) {
+                    publishNotify('删除会话失败：会话目录未知', 'error')
+                    return
+                }
+                void deleteSessionFile(path, S.cwd)
+                    .then(out => {
+                        if (!out.ok) {
+                            publishNotify(
+                                out.reason === 'unknown_session' ?
+                                    '会话不存在或已被删除'
+                                :   '删除会话失败',
+                                'error'
+                            )
+                            return
+                        }
+                        publishNotify('会话已删除', 'info')
+                        void buildSessionsFrame()
+                            .then(frame => frame && getState().sink(frame))
+                            .catch(() => {})
+                    })
+                    .catch(err => publishNotify(`删除会话失败: ${(err as Error).message}`, 'error'))
+            }
         )
         // Hands-off HTTPS: point Tailscale serve at our port so phones get a
         // secure context. Best-effort — any failure degrades to the http URL.

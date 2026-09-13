@@ -210,11 +210,18 @@ html, body {
     --m3e-nav-menu-item-height: auto;
 }
 #session-list .s-label {
+    /* Anchor box for the per-row trash button. flex:1 makes the slotted label
+       fill the plate's content width (as a flex item it would otherwise shrink
+       to the text width and park the button mid-row); the extra right padding
+       keeps the title's 2-line clamp from running underneath the button. */
+    position: relative;
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     gap: 0.125rem;
     min-width: 0;
     padding-block: 0.375rem;
+    padding-right: 2rem;
 }
 #session-list .s-title {
     font-size: 0.875rem;
@@ -225,6 +232,47 @@ html, body {
     overflow: hidden;
 }
 #session-list .s-sub { font-size: 0.72rem; color: var(--md-sys-color-on-surface-variant); }
+/* Per-row delete: a 28px icon button parked in the row plate's right padding,
+   revealed on row hover or keyboard focus, always visible on hover-less
+   (touch) devices — the same treatment the code block's copy button gets.
+   Absent on the CURRENT row entirely (syncSessionItem skips it): pi holds
+   that file open. It must stay INSIDE the slotted .s-label's box: the
+   component's internal .label wrapper clips overflow, so a negative right
+   offset would have its right half amputated. */
+#session-list .s-del {
+    --_d: 1.75rem;
+    position: absolute;
+    right: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: var(--_d);
+    height: var(--_d);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms, color 150ms;
+}
+#session-list m3e-nav-menu-item:hover .s-del,
+#session-list m3e-nav-menu-item:focus-within .s-del,
+#session-list .s-del:focus-visible { opacity: 1; }
+#session-list .s-del:hover { color: var(--md-sys-color-error); }
+#session-list .s-del m3e-icon { font-size: 1rem; }
+@media (hover: none) {
+    #session-list .s-del { opacity: 1; }
+}
+/* A destructive confirm reads in the error palette: the filled button paints
+   --md-sys-color-primary, so swap the pair rather than restyle the component. */
+#session-delete-confirm {
+    --md-sys-color-primary: var(--md-sys-color-error);
+    --md-sys-color-on-primary: var(--md-sys-color-on-error);
+}
 #session-list .s-empty {
     padding: 1.25rem 1rem;
     font-size: 0.85rem;
@@ -1388,7 +1436,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
    never corner-aligned with the dialog's arcs — so the concentric rule
    (outer − inner = gap) does not bind them; they keep their own radii. */
 
-#prompt-card .q { font-size: 0.95rem; line-height: 1.5; }
+#prompt-card .q, #session-delete-dialog .q { font-size: 0.95rem; line-height: 1.5; }
 #prompt-card .rec-panel {
     display: none;
     margin-top: 0.85rem;
@@ -1601,6 +1649,14 @@ export function mduiHtml(wsUrl: string): string {
     <m3e-textarea-autosize for="prompt-input" min-rows="3" max-rows="8"></m3e-textarea-autosize>
     <div slot="actions" class="row" id="prompt-buttons"></div>
   </m3e-dialog>
+  <m3e-dialog id="session-delete-dialog" alert>
+    <span slot="header">删除会话</span>
+    <p class="q" id="session-delete-text"></p>
+    <div slot="actions" end>
+      <m3e-button id="session-delete-cancel" autofocus>取消</m3e-button>
+      <m3e-button id="session-delete-confirm" variant="filled">删除</m3e-button>
+    </div>
+  </m3e-dialog>
 
   <!-- Reconnect overlay with live countdown -->
   <div id="reconnect-overlay"><span id="reconnect-msg">重新连接中…</span></div>
@@ -1662,6 +1718,8 @@ function stage0Logic(wsUrl: string): string {
     const promptRecText= document.getElementById('prompt-rec-text');
     const promptInput  = document.getElementById('prompt-input');
     const promptButtons= document.getElementById('prompt-buttons');
+    const sessionDeleteDialog  = document.getElementById('session-delete-dialog');
+    const sessionDeleteText    = document.getElementById('session-delete-text');
     const notifPanel   = document.getElementById('notif-panel');
     const notifList    = document.getElementById('notif-list');
     const notifToggle  = document.getElementById('notif-toggle');
@@ -1747,7 +1805,11 @@ function stage0Logic(wsUrl: string): string {
         // glyph that says "from a picture". Paths from @material-design-icons/
         // svg (image), same 24×24 grid as the rest.
         image: ['M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86-3 3.87L9 13.14 6 17h12l-3.86-5.14z',
-                'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z']
+                'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'],
+        // The session drawer's per-row delete button. Paths from
+        // @material-design-icons/svg (delete), same 24×24 grid as the rest.
+        delete: ['M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z',
+                 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z']
       };
       for (const name in iconPaths) {
         m.registerIcon(name, 'outlined', {
@@ -2674,6 +2736,32 @@ function stage0Logic(wsUrl: string): string {
       // already carries native selected, so the indicator's grow animation
       // is never restarted by a data refresh.
       it.toggleAttribute('selected', !!cur);
+      // The trash button sits on every row except the CURRENT one (the server
+      // refuses that path anyway — pi keeps the file open and appends to it,
+      // so deleting it under the live session would lose everything typed
+      // afterwards). Managed here, not at row-creation time, because which
+      // row is current changes without the row set changing.
+      let del = it.querySelector('.s-del');
+      if (cur) {
+        if (del) del.remove();
+      } else if (!del) {
+        del = document.createElement('button');
+        del.type = 'button';
+        del.className = 's-del';
+        del.title = '删除会话';
+        del.setAttribute('aria-label', '删除会话');
+        const di = document.createElement('m3e-icon');
+        di.setAttribute('name', 'delete');
+        del.appendChild(di);
+        // The row's own click handler switches sessions; a trash tap must stay
+        // a trash tap, so it never reaches that listener.
+        del.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          openSessionDelete(it);
+        });
+        it.querySelector('.s-label').appendChild(del);
+      }
     }
     function renderSessions() {
       const sessions = sessionData.sessions || [];
@@ -2704,7 +2792,9 @@ function stage0Logic(wsUrl: string): string {
           sub.className = 's-sub';
           label.append(title, sub);
           it.append(ic, label);
-          it.addEventListener('click', () => {
+          it.addEventListener('click', e => {
+            // Trash taps bubble here too — the confirm-dialog flow owns them.
+            if (e.target && e.target.closest && e.target.closest('.s-del')) return;
             drawer.start = false;
             if (!ws || ws.readyState !== 1) return;
             // Compare against the SERVER's current session, never against the
@@ -2726,6 +2816,36 @@ function stage0Logic(wsUrl: string): string {
       }
       sessions.forEach((s, i) => syncSessionItem(existing[i], s, s.path === sessionData.current));
     }
+    // ── Session delete: the trash button opens the dialog, the two buttons
+    // close it, and the confirm one also fires delete_session for the row
+    // that was pending when the dialog opened. ──
+    let pendingDeletePath = null;
+    function openSessionDelete(it) {
+      const title = it.querySelector('.s-title').textContent || '';
+      pendingDeletePath = it._sessionPath;
+      sessionDeleteText.textContent = '删除「' + title + '」？删除后无法恢复。';
+      sessionDeleteDialog.open = true;
+    }
+    // Plain buttons + explicit open=false, exactly the prompt-card's mechanism
+    // (m3e-dialog-action's hide() path breaks slot rendering on the SECOND
+    // open of the same dialog, so the working pattern wins). The server
+    // re-scans and pushes a fresh sessions frame; the keyed renderer rebuilds
+    // the list and the deleted row is simply gone.
+    document.getElementById('session-delete-cancel').addEventListener('click', () => {
+      pendingDeletePath = null;
+      sessionDeleteDialog.open = false;
+    });
+    document.getElementById('session-delete-confirm').addEventListener('click', () => {
+      const path = pendingDeletePath;
+      pendingDeletePath = null;
+      sessionDeleteDialog.open = false;
+      if (!path) return;
+      if (!ws || ws.readyState !== 1) {
+        showToast('删除会话失败：连接已断开', 'error');
+        return;
+      }
+      ws.send(JSON.stringify({ type: 'delete_session', path }));
+    });
     menuBtn.addEventListener('click', () => {
       drawer.start = true;
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'list_sessions' }));

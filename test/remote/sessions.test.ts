@@ -1,9 +1,13 @@
-import {mkdtempSync} from 'node:fs'
+import {existsSync, mkdtempSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {test, expect} from 'bun:test'
 import {SessionManager} from '@earendil-works/pi-coding-agent'
-import {listSessionSummaries, withCurrentSession} from '../../src/remote/sessions.js'
+import {
+    deleteSessionFile,
+    listSessionSummaries,
+    withCurrentSession
+} from '../../src/remote/sessions.js'
 
 /** appendMessage demands pi's full AgentMessage metadata (api/provider/usage…);
  *  the persistence layer only serializes what it gets, so the test literals
@@ -85,4 +89,45 @@ test('a current session the scan already returned is left untouched', () => {
     expect(withCurrentSession(scanned, '/s/cur.jsonl')).toBe(scanned)
     // Unknown cwd/session (no path): nothing to add either.
     expect(withCurrentSession(scanned, null)).toBe(scanned)
+})
+
+// ─── deleteSessionFile: the scan is the delete allow-list ───────────────────
+
+test('deletes a session file the scan returned', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-remote-sessions-del-'))
+    const cwd = process.cwd()
+
+    const mgr = SessionManager.create(cwd, dir)
+    append(mgr, {role: 'user', content: 'delete me'})
+    append(mgr, {role: 'assistant', content: [{type: 'text', text: 'gone'}]})
+    const path = mgr.getSessionFile() ?? ''
+    expect(existsSync(path)).toBe(true)
+
+    const out = await deleteSessionFile(path, cwd, dir)
+    expect(out).toEqual({ok: true})
+    expect(existsSync(path)).toBe(false)
+    // The sidebar's next scan no longer sees it.
+    expect(await listSessionSummaries(cwd, dir)).toEqual([])
+})
+
+test('refuses any path the scan never returned', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-remote-sessions-del-'))
+    const cwd = process.cwd()
+
+    // A real JSONL file OUTSIDE the session dir: if the helper trusted the
+    // caller's path, this would be an arbitrary-file delete.
+    const outsideDir = mkdtempSync(join(tmpdir(), 'pi-remote-outside-'))
+    const outside = join(outsideDir, 'evil.jsonl')
+    writeFileSync(outside, '{}')
+
+    expect(await deleteSessionFile(outside, cwd, dir)).toEqual({
+        ok: false,
+        reason: 'unknown_session'
+    })
+    expect(existsSync(outside)).toBe(true)
+    // Inside the dir but never a session (pi did not write it): refused too.
+    expect(await deleteSessionFile(join(dir, 'nope.jsonl'), cwd, dir)).toEqual({
+        ok: false,
+        reason: 'unknown_session'
+    })
 })

@@ -178,6 +178,11 @@ export interface ClientSwitchSession {
     type: 'switch_session'
     path: string
 }
+/** Delete a persisted session (browser sidebar trash button). */
+export interface ClientDeleteSession {
+    type: 'delete_session'
+    path: string
+}
 export type ClientMessage =
     | ClientChatMessage
     | ClientPromptAnswer
@@ -186,6 +191,7 @@ export type ClientMessage =
     | ClientSetModel
     | ClientListSessions
     | ClientSwitchSession
+    | ClientDeleteSession
 
 export function isClientMessage(x: unknown): x is ClientMessage {
     if (typeof x !== 'object' || x === null) return false
@@ -199,5 +205,6 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     if (m.type === 'set_model') return typeof m.spec === 'string' && m.spec.length > 0
     if (m.type === 'list_sessions') return true
     if (m.type === 'switch_session') return typeof m.path === 'string' && m.path.length > 0
+    if (m.type === 'delete_session') return typeof m.path === 'string' && m.path.length > 0
     return false
 }
