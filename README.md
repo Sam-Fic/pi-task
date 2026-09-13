@@ -9,7 +9,7 @@
 [![npm](https://img.shields.io/npm/v/@mjasnikovs/pi-task?color=cb3837&logo=npm)](https://www.npmjs.com/package/@mjasnikovs/pi-task)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![pi extension](https://img.shields.io/badge/pi-extension-7c3aed)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-[![tests](https://img.shields.io/badge/tests-4280%20passing-3fb950)](#development)
+[![tests](https://img.shields.io/badge/tests-4631%20passing-3fb950)](#development)
 [![types](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 
 </div>
@@ -247,9 +247,10 @@ Prompts use a **first-answer-wins race**: the same question shows in the local T
 
 Tap the bell (◯ → ◉) in the remote header to get pushed a notification — even with the app backgrounded or the phone locked — when:
 
-- a **grill / clarify question** needs answering (*"pi needs your input"*),
-- a **task finishes** (*"Task finished"*), or
-- the agent hits an **error** (*"Agent error"*).
+- a **grill / clarify question** needs answering (*"pi needs your input"*), or
+- a **task finishes** (*"Task finished"*).
+
+Host agent errors are deliberately **not** pushed — most of them happen outside any task, and a push on every one is just noise.
 
 Delivery is **server → push service → device** over the [Web Push](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) standard (service worker + VAPID), so it reaches a suspended device. It works on desktop browsers and on iOS home-screen PWAs.
 
@@ -299,11 +300,14 @@ Resolves an installed package, indexes its API surface and README into a local S
 | `npm` | `package.json`, or a `node_modules/` directory | the `.d.ts` files the package ships, plus README | the installed `package.json` |
 | `cargo` | `Cargo.toml`, at the directory or one level below it | `.rs` source reduced to public item heads, doc comments and attributes | `Cargo.lock` |
 | `hackage` | `*.cabal`, `cabal.project`, `stack.yaml` or `package.yaml` | `.hs` source reduced to the export list, signatures and type declarations | `dist-newstyle/cache/plan.json`, then `cabal.project.freeze`, then `stack.yaml.lock` |
+| `go` | `go.mod` or `go.work`, at the directory, above it or one level below | `.go` source reduced to exported declarations, struct fields, interface methods and doc comments | `go.mod`, which since Go 1.17 carries the resolved closure |
 
 - **No manifest, no lookup.** In a directory with none of the above the tool refuses, spawns nothing and installs nothing, and points you at `pi-worker-search` / `pi-worker-fetch` instead.
 - **Two manifests** (a Tauri app, say) are resolved by whichever registry already has the package on disk. If neither does, the call is refused as ambiguous and you pass `ecosystem: "cargo"` to say which.
-- A package the project does not have is fetched once into a dedicated cache dir: `npm install --ignore-scripts` for npm, the `.crate` tarball for cargo, the Hackage tarball (or cabal's own cached copy) for hackage.
+- A package the project does not have is fetched once into a dedicated cache dir: `npm install --ignore-scripts` for npm, the `.crate` tarball for cargo, the Hackage tarball (or cabal's own cached copy) for hackage, the module zip from `proxy.golang.org` for go.
 - A Haskell **module** name is refused by name — `Data.Aeson` is not a package, `aeson` is.
+- For **go you pass the import path**, `github.com/gin-gonic/gin/binding` or `net/http`, because that is what a Go file names. The module serving it is worked out by asking the proxy for the longest prefix that resolves — `gin/binding` belongs to `gin`, while `aws-sdk-go-v2/service/s3` is its own module. Vendored source and the local module cache are read first and cost nothing.
+- The **Go standard library** is not on the proxy. It is read from a local `GOROOT` where there is one, and otherwise sliced out of the `golang.org/toolchain` archive over HTTP range requests — about 2 MB for `net/http` against 83 MB for the archive.
 - The first call for a `(ecosystem, package, version)` triple pays a one-time ingestion cost; later calls are FTS-only.
 - Cache lives at `${XDG_CACHE_HOME:-~/.cache}/pi-worker/docs.sqlite` — delete it to reset.
 
@@ -358,12 +362,12 @@ them checked in.
 
 ```sh
 bun install
-bun run test       # 4281 tests across 234 files
+bun run test       # 4631 tests pass across 247 files (1 skip)
 bun run lint       # prettier + eslint + tsc --noEmit
 bun run build      # tsc → dist/
 ```
 
-Built with [Bun](https://bun.sh), TypeScript (strict), and [TypeBox](https://github.com/sinclairzx81/typebox) for tool schemas. Design plans live in [`plans/`](./plans).
+Built with [Bun](https://bun.sh), TypeScript (strict), and [TypeBox](https://github.com/sinclairzx81/typebox) for tool schemas.
 
 ## License
 

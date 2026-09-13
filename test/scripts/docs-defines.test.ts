@@ -4,7 +4,7 @@
  * merely appears in a body is a use, not a definition.
  */
 import {test, expect, describe} from 'bun:test'
-import {definesSymbol, mcnemar, compare} from '../../scripts/docs-defines.js'
+import {definesSymbol, mcnemar, compare, queryAsks} from '../../scripts/docs-defines.js'
 
 const chunk = (content: string): {content: string} => ({content})
 
@@ -159,4 +159,83 @@ describe('compare', () => {
             compare([row('safeParse', true), row('issues', true)], [row('safeParse', true)])
         ).toContain('pairs 1')
     })
+})
+
+// The chunk below is verbatim from the index and is exactly what the metric exists
+// to find. It scored FALSE: `body()` strips only the path line, so the head the
+// regex sees is `declare module "node:url" {` — and `module` is not one of its
+// keywords — while `memberDeclaration` wants a line that STARTS with the symbol,
+// and this one starts with `function`. Both halves miss a declaration that is
+// nested one level, which after the oversized-declaration split is most of npm.
+const NODE_URL_CHUNK = {
+    content:
+        '// url.d.ts\n'
+        + 'declare module "node:url" {\n'
+        + '    function fileURLToPath(url: string | URL, options?: FileUrlToPathOptions): string;\n'
+        + '    /**\n     * Like `url.fileURLToPath(...)` …\n     */\n'
+}
+
+test('a declaration nested in a `declare module` block defines its symbol', () => {
+    expect(definesSymbol([NODE_URL_CHUNK], 'npm', 'fileURLToPath')).toBe(true)
+})
+
+test('the enclosing module block does not lend its name to a neighbour', () => {
+    expect(definesSymbol([NODE_URL_CHUNK], 'npm', 'fileURLToPathBuffer')).toBe(false)
+})
+
+test('a top-level declaration still defines its symbol', () => {
+    expect(
+        definesSymbol(
+            [{content: '// hono.d.ts\nexport declare class Hono<E> extends HonoBase<E> {\n}\n'}],
+            'npm',
+            'Hono'
+        )
+    ).toBe(true)
+})
+
+// `includes` forbade short symbols without saying so: `it` is a real bun:test export
+// and a substring of "with", "its" and "signature". A metric that cannot hold a
+// two-letter symbol cannot decide MIN_TOKEN_LEN, which is the constant that drops them.
+test('a short symbol is not found inside a longer word', () => {
+    expect(queryAsks('signature for in-process dispatch, with its return type', 'it')).toBe(false)
+})
+
+test('a short symbol standing alone is found', () => {
+    expect(queryAsks('describe, it, expect — the bun:test API', 'it')).toBe(true)
+})
+
+test('a dotted name matches where it is written', () => {
+    expect(queryAsks('Bun.file(path) returns a BunFile', 'Bun.file')).toBe(true)
+})
+
+test('a dotted name does not match a longer identifier', () => {
+    expect(queryAsks('Bun.fileURLToPath is not a thing', 'Bun.file')).toBe(false)
+})
+
+test('the long symbols the set already had are unaffected', () => {
+    expect(queryAsks('what does safeParse return on failure', 'safeParse')).toBe(true)
+    expect(queryAsks('eitherDecode :: L.ByteString -> Either', 'eitherDecode')).toBe(true)
+})
+
+// bun-types declares `it` nowhere. Line 596 of test.d.ts is
+// `export { test as it, xtest as xit };` and that IS the answer a caller needs —
+// `it` is `test`. A defining-chunk metric that cannot read a rename scores the
+// right chunk as a miss.
+test('an export rename defines the name it exports', () => {
+    const c = {
+        content:
+            '// test.d.ts\ndeclare module "bun:test" {\n  export { test as it, xtest as xit };\n'
+    }
+    expect(definesSymbol([c], 'npm', 'it')).toBe(true)
+    expect(definesSymbol([c], 'npm', 'xit')).toBe(true)
+})
+
+test('an export rename does not define the name it renames FROM', () => {
+    const c = {content: '// test.d.ts\n  export { test as it };\n'}
+    expect(definesSymbol([c], 'npm', 'test')).toBe(false)
+})
+
+test('a plain re-export is not a rename and defines nothing new', () => {
+    const c = {content: '// index.d.ts\n  export { Hono } from "./hono";\n'}
+    expect(definesSymbol([c], 'npm', 'Hono')).toBe(false)
 })

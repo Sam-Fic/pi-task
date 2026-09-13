@@ -180,7 +180,7 @@ test('retrieveChunks returns empty when package not indexed at all', () => {
     }
 })
 
-// Live run 2026-09-05 (DOC_REGRESSINONS.md section 3). Three hono lookups, three
+// Live run 2026-09-05. Three hono lookups, three
 // abstentions. hono declares every verb as a property typed by an interface
 // alias — `get: HandlerInterface<E, 'get', S, BasePath, CurrentPath>` in
 // hono-base.d.ts — while the call signatures live in `HandlerInterface`, in one
@@ -214,7 +214,7 @@ test('retrieveChunks follows a member type alias to its definition', () => {
     }
 })
 
-// Live run 2026-09-05 (DOC_REGRESSINONS.md section 6). The Haskell run asked
+// Live run 2026-09-05. The Haskell run asked
 // scotty for `json`'s type and the definitions of ScottyM / ActionM seven times.
 // Four outright non-answers, three partials, and the signature never appeared —
 // while `type ActionM = ActionT IO` sat in the index the whole time, in one chunk
@@ -397,4 +397,24 @@ test('the value hop skips a chunk whose PATH carries the name, and a bare `mod`'
     } finally {
         cache.close()
     }
+})
+
+// bun:test declares its API as `export const describe: Describe<[]>` inside a
+// `declare module` block, with the call signatures in the `Describe` interface —
+// defect 3's alias shape exactly, and the hop does NOT follow it. Teaching
+// MEMBER_TYPE_RE to see past `export const` was measured: defines 151/159 -> 149/159,
+// because the 2 KB interfaces it fetches evict the small `export const expect: Expect;`
+// the query was actually about. Pinned as deliberate so it is not "fixed" back.
+test('an aliased `export const` member is NOT a hop candidate, on purpose', () => {
+    const text =
+        '// test.d.ts\ndeclare module "bun:test" {\n  export const describe: Describe<[]>;\n'
+    expect(hopNames(text, ['describe'])).toEqual([])
+})
+
+test('a plain interface member is still a hop candidate', () => {
+    expect(hopNames('  get: HandlerInterface<E>;\n', ['get'])).toContain('HandlerInterface')
+})
+
+test('a member whose type is lowercase is not a hop candidate', () => {
+    expect(hopNames('  export const port: number;\n', ['port'])).toEqual([])
 })

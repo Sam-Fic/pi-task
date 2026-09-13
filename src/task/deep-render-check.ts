@@ -231,12 +231,19 @@ export function pinnedLocalPort(vars: Record<string, string>): number | null {
 export interface SessionRequest {
     method: string
     path: string
+    /** Where the chain ENDED — the path `status` and `mimeType` actually describe.
+     *  Absent in a pre-existing recorded session, where it falls back to `path`. */
+    finalPath?: string
     status: number | null
     mimeType: string | null
     failed: boolean
     /** CDP resource type, collapsed: what ISSUED this request. */
     initiator: 'xhr' | 'document' | 'other'
-    /** Relative to the sign-in request: before it, it, or after it. */
+    /** The chain redirected, so `status` and `mimeType` above describe a hop this
+     *  entry does not name. Any rule that reads a status AS A FACT ABOUT `path`
+     *  must skip these. */
+    redirected: boolean
+    /** Before the sign-in request, the sign-in request itself, or after it. */
     phase: 'pre' | 'auth' | 'post'
 }
 
@@ -254,11 +261,22 @@ export interface DeepSessionFacts {
     submitted: boolean
     /** The sign-in request the SUBMIT issued, when one was issued at all.
      *  Derived: the `sessionRequests` entry in phase 'auth'. */
-    authRequest: {method: string; path: string; status: number | null; failed: boolean} | null
-    /** Same-origin XHR/fetch requests issued AFTER the sign-in response, excluding
-     *  the sign-in request itself. Derived: `sessionRequests` in phase 'post'. */
+    authRequest: {
+        method: string
+        path: string
+        status: number | null
+        failed: boolean
+        /** The sign-in chain redirected, so `status` is the hop it LANDED on. */
+        redirected?: boolean
+    } | null
+    /** Same-origin XHR/fetch requests issued at or after the sign-in request,
+     *  excluding that request itself. Derived: `sessionRequests` in phase 'post'. */
     postAuthDataAttempted: number
     postAuthData2xx: number
+    /** The origin the sign-in left for, when the submit addressed this app and the
+     *  chain ended somewhere else — an external identity provider, which no
+     *  declared credential pair can drive. Optional: absent means "not recorded". */
+    signInLeftOrigin?: string | null
     /** Origins the client called that are not the app's own, whose requests failed
      *  (a bundle pinned to a build-time base URL that is not the port under test). */
     foreignOriginFailures: string[]
@@ -273,10 +291,8 @@ export interface DeepSessionFacts {
 
 /**
  * The three request-shaped facts, computed from the log and from nothing else. The
- * driver records `sessionRequests` and calls this; the values are exactly what the
- * pre-log driver computed by filtering the same map (the sign-in request is the
- * first same-origin non-GET after submit; the data requests are the same-origin
- * XHR/fetch issued at or after it, itself excluded).
+ * driver records `sessionRequests` and calls this; the phases carry the whole
+ * derivation, so this reads them and decides nothing of its own.
  */
 export function deriveLegacyFacts(
     log: SessionRequest[]
@@ -286,7 +302,13 @@ export function deriveLegacyFacts(
     return {
         authRequest:
             auth === null ? null : (
-                {method: auth.method, path: auth.path, status: auth.status, failed: auth.failed}
+                {
+                    method: auth.method,
+                    path: auth.path,
+                    status: auth.status,
+                    failed: auth.failed,
+                    redirected: auth.redirected
+                }
             ),
         postAuthDataAttempted: data.length,
         postAuthData2xx: data.filter(r => r.status !== null && r.status >= 200 && r.status < 300)
@@ -298,6 +320,12 @@ export function deriveLegacyFacts(
  *  answered No. 501 is included because a server that routes but implements
  *  nothing is the same dead call from the client's side. */
 const MISSING_ROUTE_STATUS = new Set([404, 405, 501])
+
+/** A redirected entry's `status` and `mimeType` belong to its LAST hop, so the two
+ *  rules below may read them only where that hop is still the client's own business.
+ *  Before and during sign-in, a 302 to the login page is the normal unauthenticated
+ *  flow; after sign-in, that same redirect IS the defect. */
+const lastHopJudgesTheClient = (r: SessionRequest): boolean => !r.redirected || r.phase === 'post'
 
 /**
  * Judge a recorded session. The ONE thing that may FAIL is a session the SERVER
@@ -344,6 +372,15 @@ export function judgeDeepSession(f: DeepSessionFacts): DeepRenderOutcome {
         }
     }
     if (f.authRequest === null) {
+        if (f.signInLeftOrigin) {
+            return {
+                outcome: 'skip',
+                note:
+                    `signing in leaves this app for ${f.signInLeftOrigin} — an external identity `
+                    + 'provider cannot be driven with a declared credential pair, so the '
+                    + 'authenticated half of the app was NOT observed'
+            }
+        }
         const pinned =
             f.foreignOriginFailures.length > 0 ?
                 ` — the client calls ${f.foreignOriginFailures.join(', ')}, not the origin under test (a base URL baked in at build time)`
@@ -359,37 +396,54 @@ export function judgeDeepSession(f: DeepSessionFacts): DeepRenderOutcome {
     // password, a missing permission — the app working), 5xx is the server failing,
     // and both keep their existing behaviour. Only "no such route" is here.
     const missingRoute = (f.sessionRequests ?? []).find(
-        r => r.initiator === 'xhr' && r.status !== null && MISSING_ROUTE_STATUS.has(r.status)
+        r =>
+            r.initiator === 'xhr'
+            && lastHopJudgesTheClient(r)
+            && r.status !== null
+            && MISSING_ROUTE_STATUS.has(r.status)
     )
     if (missingRoute) {
+        const landed = missingRoute.finalPath ?? missingRoute.path
+        const hop = landed === missingRoute.path ? '' : ` → \`${landed}\``
         return {
             outcome: 'fail',
             detail:
-                `\`${missingRoute.method} ${missingRoute.path}\` → ${String(missingRoute.status)}: `
-                + 'the client sent this to a path the server does not route. The credentials were '
-                + 'never evaluated. This is a dead client call — a base URL joined twice, a renamed '
-                + 'route, a wrong method. No type or mock can produce a route that is not mounted.'
+                `\`${missingRoute.method} ${missingRoute.path}\`${hop} → ${String(missingRoute.status)}: `
+                + 'the client sent this to a path the server does not route. This is a dead client '
+                + 'call — a base URL joined twice, a renamed route, a wrong method. No type or mock '
+                + 'can produce a route that is not mounted.'
         }
     }
     // Rule B — the SPA catch-all answering an API call. Any server with a
     // `GET /*` → index.html fallback returns 200 for a route it does not have, so
     // the status is healthy and the body is the app shell. A document navigation
     // answered with HTML is normal; an XHR asking for data and getting HTML is a
-    // call that reached nothing.
+    // call that reached nothing. A fetch login that 302s to a page reads as HTML
+    // while being a sign-in that worked, hence the last-hop guard.
     const swallowed = (f.sessionRequests ?? []).find(
-        r => r.initiator === 'xhr' && (r.mimeType ?? '').startsWith('text/html')
+        r =>
+            r.initiator === 'xhr'
+            && lastHopJudgesTheClient(r)
+            && (r.mimeType ?? '').startsWith('text/html')
     )
     if (swallowed) {
+        const landed = swallowed.finalPath ?? swallowed.path
+        const hop = landed === swallowed.path ? '' : ` → \`${landed}\``
+        const cause =
+            swallowed.redirected ?
+                'The call was bounced to a page, so the session the client carried is not one this '
+                + 'server accepts and the answer is the SPA shell.'
+            :   'The route is not mounted and the catch-all answered instead, so the client sees a '
+                + '200 it cannot parse.'
         return {
             outcome: 'fail',
             detail:
-                `\`${swallowed.method} ${swallowed.path}\` → ${String(swallowed.status)} `
+                `\`${swallowed.method} ${swallowed.path}\`${hop} → ${String(swallowed.status)} `
                 + `${swallowed.mimeType ?? ''}: an XHR asked this server for data and got the SPA `
-                + 'shell. The route is not mounted and the catch-all answered instead, so the client '
-                + 'sees a 200 it cannot parse. No status check can see this.'
+                + `shell. ${cause} No status check can see this.`
         }
     }
-    const {method, path: p, status, failed} = f.authRequest
+    const {method, path: p, status, failed, redirected: authRedirected} = f.authRequest
     if (failed || status === null || status < 200 || status >= 300) {
         return {
             outcome: 'skip',
@@ -401,6 +455,19 @@ export function judgeDeepSession(f: DeepSessionFacts): DeepRenderOutcome {
     }
     const signedIn = `signed in (\`${method} ${p}\` → ${status})`
     if (!f.leftAuthWall) {
+        // A form sign-in that redirects lands its status on the hop it reached, so a
+        // 200 here is the landing page's, not a verdict on the credentials. Landing
+        // back on the wall is what a REJECTED password looks like, and the gate's one
+        // FAIL needs the server to have said yes.
+        if (authRedirected === true) {
+            return {
+                outcome: 'skip',
+                note:
+                    `the sign-in request (\`${method} ${p}\`) redirected, so its ${String(status)} `
+                    + 'describes the page it landed on and not the credentials, and the client is '
+                    + 'still on the wall — the authenticated half of the app was NOT observed'
+            }
+        }
         return {
             outcome: 'fail',
             detail:
@@ -462,12 +529,20 @@ interface CdpMessage {
 
 interface TrackedRequest {
     url: string
+    /** Where the chain ENDED. Which origin a request reached is the last hop's
+     *  question; which request the client made is the first hop's. */
+    finalUrl: string
     method: string
     type: string
     status: number | null
     mimeType: string | null
     failed: boolean
-    at: number
+    /** A redirectResponse was seen. Not `url !== finalUrl`: a 302 back to the page
+     *  it came from — a rejected password — leaves both spellings identical. */
+    redirected: boolean
+    /** Arrival order of this request's first requestWillBeSent. Phases compare this
+     *  and never a clock: a batch can straddle a millisecond on a loaded host. */
+    seq: number
 }
 
 /** Minimal DevTools-protocol client: request/response ids over one socket, plus
@@ -837,18 +912,33 @@ export async function driveSession(
     const origin = new URL(url).origin
 
     const requests = new Map<string, TrackedRequest>()
+    let nextSeq = 0
     let lastActivity = Date.now()
     cdp.on('Network.requestWillBeSent', p => {
+        const id = String(p.requestId)
+        // A redirect hop reuses the requestId, carrying the NEXT hop's method and
+        // url. The request the client made is the first hop and the status that
+        // judges it is the chain's last, so the first hop stays and the eventual
+        // response lands on it. Overwriting reads a POST that 302s as a GET, and
+        // then no sign-in request is ever found.
         const req = p.request as {url?: string; method?: string} | undefined
-        requests.set(String(p.requestId), {
-            url: String(req?.url ?? ''),
-            method: String(req?.method ?? 'GET'),
-            type: String(p.type ?? ''),
-            status: null,
-            mimeType: null,
-            failed: false,
-            at: Date.now()
-        })
+        const existing = requests.get(id)
+        if (p.redirectResponse !== undefined && existing) {
+            existing.finalUrl = String(req?.url ?? existing.finalUrl)
+            existing.redirected = true
+        } else {
+            requests.set(id, {
+                url: String(req?.url ?? ''),
+                finalUrl: String(req?.url ?? ''),
+                method: String(req?.method ?? 'GET'),
+                type: String(p.type ?? ''),
+                status: null,
+                mimeType: null,
+                failed: false,
+                redirected: false,
+                seq: nextSeq++
+            })
+        }
         lastActivity = Date.now()
     })
     cdp.on('Network.responseReceived', p => {
@@ -899,17 +989,17 @@ export async function driveSession(
     if (!before) throw new Error('the page could not be inspected')
 
     const sameOrigin = (r: TrackedRequest): boolean =>
+        r.finalUrl.startsWith(`${origin}/`) || r.finalUrl === origin
+    /** Which origin the client ASKED for — the first hop, before any redirect. */
+    const addressedOrigin = (r: TrackedRequest): boolean =>
         r.url.startsWith(`${origin}/`) || r.url === origin
     const isData = (r: TrackedRequest): boolean => r.type === 'XHR' || r.type === 'Fetch'
     const foreignOriginFailures = (): string[] => {
         const out = new Set<string>()
         for (const r of requests.values()) {
-            if (sameOrigin(r) || !r.failed || !r.url.startsWith('http')) continue
-            try {
-                out.add(new URL(r.url).origin)
-            } catch {
-                // unparseable url — nothing to name
-            }
+            if (sameOrigin(r) || !r.failed || !r.finalUrl.startsWith('http')) continue
+            const o = originOf(r.finalUrl)
+            if (o) out.add(o)
         }
         return [...out]
     }
@@ -917,22 +1007,27 @@ export async function driveSession(
         isData(r) ? 'xhr'
         : r.type === 'Document' ? 'document'
         : 'other'
-    /** The same-origin request log, phased against the sign-in request. `authAt` is
-     *  Infinity before the submit, so every request so far is 'pre'. */
-    const sessionLog = (authId: string | null, authAt: number): SessionRequest[] => {
+    /** The same-origin request log. `postSeq` is where the authenticated half
+     *  begins — Infinity while no submit has happened — so everything before it is
+     *  'pre'; the sign-in request itself is 'auth', not 'post'. The boundary is the
+     *  sign-in request, not the submit: a CSRF token or a beacon the submit fires
+     *  BEFORE the login is not evidence about the authenticated client. */
+    const sessionLog = (authId: string | null, postSeq: number): SessionRequest[] => {
         const out: SessionRequest[] = []
         for (const [id, r] of requests) {
             if (!sameOrigin(r)) continue
             out.push({
                 method: r.method,
                 path: pathOf(r.url),
+                finalPath: pathOf(r.finalUrl),
                 status: r.status,
                 mimeType: r.mimeType,
                 failed: r.failed,
                 initiator: initiatorOf(r),
+                redirected: r.redirected,
                 phase:
                     id === authId ? 'auth'
-                    : r.at >= authAt ? 'post'
+                    : r.seq >= postSeq ? 'post'
                     : 'pre'
             })
         }
@@ -945,6 +1040,7 @@ export async function driveSession(
         credentialsFound: credentials !== null,
         submitted: false,
         foreignOriginFailures: foreignOriginFailures(),
+        signInLeftOrigin: null,
         leftAuthWall: false,
         urlBefore: before.url,
         urlAfter: before.url,
@@ -957,7 +1053,7 @@ export async function driveSession(
 
     if (!before.hasPassword || credentials === null) return judge(unsubmitted({}))
 
-    const submitMark = Date.now()
+    const fillSeq = nextSeq
     const filled = await evaluate<{ok: boolean; reason?: string}>(
         fillExpr(credentials.identifier, credentials.password)
     )
@@ -965,25 +1061,50 @@ export async function driveSession(
     // Separate turn: the fill's input events schedule framework state updates that
     // the submit handler must already see.
     await sleep(300)
+    // Captured after the fill: background traffic before the submit must not be
+    // eligible as the sign-in request.
+    const submitSeq = nextSeq
     const submitted = await evaluate<{ok: boolean; reason?: string}>(SUBMIT_EXPR)
     if (!submitted?.ok) return judge(unsubmitted({submitted: false}))
     lastActivity = Date.now()
     await settle(() => lastActivity, POST_SUBMIT_CAP_MS, quietMs)
 
+    const firstRequest = (pred: (r: TrackedRequest) => boolean): string | null => {
+        for (const [id, r] of requests) if (pred(r)) return id
+        return null
+    }
     // The sign-in request: the first same-origin non-GET issued by the submit. Its
     // own 2xx is the precondition for judging anything, and it is EXCLUDED from the
     // data evidence — a broken build satisfies "at least one same-origin 2xx" with
     // exactly this request and nothing else.
-    const after = new Map([...requests].filter(([, r]) => r.at >= submitMark))
-    let authId: string | null = null
-    for (const [id, r] of after) {
-        if (sameOrigin(r) && r.method !== 'GET') {
-            authId = id
-            break
-        }
-    }
-    const authReq = authId !== null ? after.get(authId)! : null
-    const authAt = authReq?.at ?? submitMark
+    //
+    // The fallback covers a form that submits from the fill's own input events, so
+    // nothing arrives after the submit at all. Only a NAVIGATION qualifies there —
+    // the background traffic the fill races (beacons, telemetry) is XHR or fetch,
+    // never a document. The two windows overlap; the predicates carry the
+    // distinction.
+    const authId =
+        firstRequest(r => r.seq >= submitSeq && sameOrigin(r) && r.method !== 'GET')
+        ?? firstRequest(
+            r => r.seq >= fillSeq && sameOrigin(r) && r.method !== 'GET' && r.type === 'Document'
+        )
+    // An SSO sign-in addresses this app and ends on the provider, so it is absent
+    // from the same-origin log above and "no request to our own origin" would
+    // misname it. The two windows are authId's, for the same reasons: anything the
+    // submit issued counts, and only a NAVIGATION counts back to the fill, where the
+    // background traffic it races would otherwise name a bogus identity provider.
+    const offsiteSignIn =
+        authId !== null ? null : (
+            firstRequest(
+                r =>
+                    (r.seq >= submitSeq || (r.seq >= fillSeq && r.type === 'Document'))
+                    && r.method !== 'GET'
+                    && addressedOrigin(r)
+                    && !sameOrigin(r)
+                    && r.finalUrl.startsWith('http')
+            )
+        )
+    const authReq = authId === null ? null : requests.get(authId)!
     const now = await evaluate<{hasPassword: boolean; url: string; pathname: string; html: string}>(
         INSPECT_EXPR
     )
@@ -1009,9 +1130,9 @@ export async function driveSession(
         await settle(() => lastActivity, RE_NAV_CAP_MS, quietMs)
     }
     return judge(
-        facts(sessionLog(authId, authAt), {
+        facts(sessionLog(authId, authReq?.seq ?? submitSeq), {
             submitted: true,
-            foreignOriginFailures: foreignOriginFailures(),
+            signInLeftOrigin: offsiteSignIn && originOf(requests.get(offsiteSignIn)!.finalUrl),
             leftAuthWall,
             urlAfter: now?.url ?? before.url,
             postAuthDomOk: domJudgment.ok,
@@ -1025,5 +1146,13 @@ function pathOf(url: string): string {
         return new URL(url).pathname
     } catch {
         return url
+    }
+}
+
+function originOf(url: string): string | null {
+    try {
+        return new URL(url).origin
+    } catch {
+        return null
     }
 }

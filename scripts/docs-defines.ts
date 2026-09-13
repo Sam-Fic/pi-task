@@ -32,9 +32,12 @@ import {TRUTH, PROJECTS, type EcosystemId} from './docs-live-truth.js'
  * The chunk's own `// path` / `-- path` comment line is skipped first.
  */
 const HEAD: Record<EcosystemId, RegExp> = {
-    npm: /^(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|namespace|const|let|var|enum)\s+([A-Za-z_$][\w$]*)/,
-    cargo: /^(?:#\[[^\n]*\]\s*)*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+|unsafe\s+|const\s+|extern\s+)*(?:fn|struct|enum|union|trait|type|impl|mod|const|static)\s+([A-Za-z_][\w]*)/,
-    hackage: /^(?:([a-z_][\w']*)\s*::|(?:data|newtype|type|class)\s+([A-Z][\w']*))/
+    npm: /^[ \t]*(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|namespace|const|let|var|enum)\s+([A-Za-z_$][\w$]*)/,
+    cargo: /^[ \t]*(?:#\[[^\n]*\]\s*)*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+|unsafe\s+|const\s+|extern\s+)*(?:fn|struct|enum|union|trait|type|impl|mod|const|static)\s+([A-Za-z_][\w]*)/,
+    hackage: /^[ \t]*(?:([a-z_][\w']*)\s*::|(?:data|newtype|type|class)\s+([A-Z][\w']*))/,
+    // A method's name follows its receiver, so the optional group has to be
+    // consumed before the name is read: `func (c *Context) JSON` defines JSON.
+    go: /^[ \t]*(?:func\s*(?:\([^)]*\)\s*)?|(?:type|const|var)\s+)([A-Za-z_]\w*)/
 }
 
 /**
@@ -47,9 +50,40 @@ function memberDeclaration(symbol: string): RegExp {
     return new RegExp(`^\\s*(?:readonly\\s+)?${symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[?:(<]`, 'm')
 }
 
-/** Strip the leading `// path` or `-- path` line the indexer prepends. */
+/**
+ * Strip what the indexer prepended, so what is left starts at the declaration.
+ *
+ * Two lines, not one. The `// path` label has always been stripped. The second is
+ * the enclosing `declare module "node:url" {` that `splitOversized` repeats on every
+ * piece of an oversized declaration: it is CONTEXT, deliberately kept so a piece
+ * says what it is a member of, and reading it as the head made this scorer answer
+ * false for
+ *
+ *     // url.d.ts
+ *     declare module "node:url" {
+ *         function fileURLToPath(url: string | URL, …): string;
+ *
+ * which is exactly the chunk the metric exists to find.
+ */
 function body(chunk: string): string {
-    return chunk.replace(/^(?:\/\/|--)[^\n]*\n/, '')
+    return chunk
+        .replace(/^(?:\/\/|--)[^\n]*\n/, '')
+        .replace(/^(?:export\s+)?declare\s+(?:module|namespace)\s[^\n]*\{\s*\n/, '')
+}
+
+/**
+ * `export { test as it }` — a rename, which IS how a caller learns what `it` is.
+ *
+ * `bun-types` declares `it` nowhere: line 596 of `test.d.ts` renames `test`, and
+ * `declare var it` in `test-globals.d.ts` points back at the module. A metric that
+ * cannot read the rename scores the chunk that answers the question as a miss.
+ *
+ * Only `X as SYMBOL` counts, never a bare `export { X }` — a plain re-export moves a
+ * name that is declared elsewhere and tells a caller nothing it did not know.
+ */
+function exportRenames(text: string, symbol: string): boolean {
+    const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`\\bas\\s+${escaped}\\s*[,}]`).test(text)
 }
 
 export function definesSymbol(
@@ -61,8 +95,26 @@ export function definesSymbol(
         const head = HEAD[ecosystem].exec(body(c.content))
         if (head && (head[1] ?? head[2]) === symbol) return true
         if (memberDeclaration(symbol).test(body(c.content))) return true
+        if (exportRenames(c.content, symbol)) return true
     }
     return false
+}
+
+/**
+ * Does this query ASK for `named`? Whole-token, not substring.
+ *
+ * `includes` was fine while every truth symbol was long — `safeParse`, `eitherDecode`,
+ * `TcpListener` — and it silently forbids short ones: `it` is a real `bun:test`
+ * export and a substring of "with", "its" and "signature". A metric that cannot
+ * hold a two-letter symbol cannot decide `MIN_TOKEN_LEN`, which is the constant
+ * that drops them.
+ *
+ * The boundary is the tokenizer's own alphabet — `[A-Za-z0-9_]` — so `Bun.file`
+ * matches inside `Bun.file(path)` and `it` does not match inside `with`.
+ */
+export function queryAsks(query: string, named: string): boolean {
+    const escaped = named.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`).test(query)
 }
 
 export interface DefinesRow {
@@ -118,11 +170,19 @@ async function collect(opts: Options): Promise<DefinesRow[]> {
     // rather than duplicated, so a new pin cannot disagree with a hand-written map.
     const ecosystemOf = new Map<string, EcosystemId>()
     for (const spec of PROJECTS) for (const pkg of Object.keys(spec.pins)) ecosystemOf.set(pkg, spec.ecosystem)
-    const byModule = new Map<string, {symbol: string; ecosystem: EcosystemId}[]>()
+    // A truth entry for a package no project PINS still has an ecosystem: the Bun
+    // family and the node builtins are npm, resolved by auto-install rather than by
+    // a manifest. Without this they were silently dropped, which is why the chunk
+    // table's worst-shaped packages had no metric.
+    for (const t of TRUTH) if (!ecosystemOf.has(t.pkg)) ecosystemOf.set(t.pkg, 'npm')
+    const byModule = new Map<string, {symbol: string; named?: string; ecosystem: EcosystemId}[]>()
     for (const t of TRUTH) {
         const eco = ecosystemOf.get(t.pkg)
         if (eco === undefined) continue
-        byModule.set(t.pkg, [...(byModule.get(t.pkg) ?? []), {symbol: t.symbol, ecosystem: eco}])
+        byModule.set(t.pkg, [
+            ...(byModule.get(t.pkg) ?? []),
+            {symbol: t.symbol, named: t.named, ecosystem: eco}
+        ])
     }
     const rows: DefinesRow[] = []
     for (const file of opts.files) {
@@ -139,7 +199,7 @@ async function collect(opts: Options): Promise<DefinesRow[]> {
             }
             const truths = rec.module === undefined ? undefined : byModule.get(rec.module)
             if (!truths || rec.query === undefined) continue
-            const named = truths.filter(t => rec.query!.includes(t.symbol))
+            const named = truths.filter(t => queryAsks(rec.query!, t.named ?? t.symbol))
             if (named.length === 0) continue
             const res = await docsRaw({
                 pkg: rec.module!,

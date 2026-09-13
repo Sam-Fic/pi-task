@@ -636,8 +636,9 @@ export function manifestPackages(cwd: string): Set<string> | undefined {
  * re-export puts the name in the export list; a `module X` re-export puts
  * nothing there at all, which is why `shouldBe` is invisible to the first.
  *
- * See DEFECT-12-STOPPING-RULE.md for why this triggers on the hole itself
- * rather than on a fraction of the export list.
+ * The trigger is the hole itself, with no fraction threshold: a threshold moves
+ * the count without changing which modules are actually missing signatures, so
+ * any value picked would only sound principled.
  */
 
 const EXPORT_NAME_RE = /^[A-Za-z_][\w']*$/

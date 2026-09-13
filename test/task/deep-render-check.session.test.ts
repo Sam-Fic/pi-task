@@ -8,7 +8,7 @@
  * the branch table for what happens once the browser is connected. The rules the
  * scenarios reproduce are the driver's own: a landing is a WALL when a visible
  * password input exists; the sign-in request is the first same-origin non-GET
- * issued after the submit; the wall is LEFT when the password input is gone OR
+ * issued at or after the submit; the wall is LEFT when the password input is gone OR
  * the pathname changed; re-entry happens only after an accepted (2xx) sign-in
  * that left the wall. The verdict those facts feed is `judgeDeepSession`, covered
  * in deep-render-check.test.ts and used as the oracle here.
@@ -37,6 +37,9 @@ interface FakeRequest {
     status?: number
     mimeType?: string
     failed?: boolean
+    /** Redirect this request once, the way Chrome reports it: the same requestId
+     *  again, carrying the next hop and the finished hop's `redirectResponse`. */
+    redirectTo?: string
 }
 interface Inspect {
     hasPassword: boolean
@@ -47,6 +50,9 @@ interface Inspect {
 interface Scenario {
     /** Requests to emit on each Page.navigate, in call order. */
     navigations?: FakeRequest[][]
+    /** Requests to emit when the fill expression is evaluated — a page's own
+     *  background traffic, racing the sign-in the submit is about to issue. */
+    onFill?: FakeRequest[]
     /** Requests to emit when the submit expression is evaluated. */
     onSubmit?: FakeRequest[]
     /** Sequential answers to the page-inspect expression (last one repeats).
@@ -92,6 +98,14 @@ class FakeCdp implements CdpLike {
                 request: {url: r.url, method: r.method ?? 'GET'},
                 type
             })
+            if (r.redirectTo !== undefined) {
+                this.emit('Network.requestWillBeSent', {
+                    requestId,
+                    request: {url: r.redirectTo, method: 'GET'},
+                    type,
+                    redirectResponse: {status: 302}
+                })
+            }
             if (r.failed) this.emit('Network.loadingFailed', {requestId})
             else {
                 this.emit('Network.responseReceived', {
@@ -122,7 +136,10 @@ class FakeCdp implements CdpLike {
         }
         if (method === 'Runtime.evaluate') {
             const expr = String(params.expression)
-            if (expr.includes('setValue')) return {result: {value: S.fill ?? {ok: true}}}
+            if (expr.includes('setValue')) {
+                this.fire(S.onFill)
+                return {result: {value: S.fill ?? {ok: true}}}
+            }
             if (expr.includes('requestSubmit')) {
                 this.fire(S.onSubmit)
                 return {result: {value: S.submit ?? {ok: true}}}
@@ -316,14 +333,156 @@ describe('driveSession: signing in', () => {
             method: 'POST',
             path: '/api/auth/login',
             status: 200,
-            failed: false
+            failed: false,
+            redirected: false
         })
         expect(facts.sessionRequests?.map(s => s.phase)).toEqual(['pre', 'auth', 'post'])
         expect(facts.postAuthDataAttempted).toBe(1)
         expect(facts.postAuthData2xx).toBe(1)
     })
 
-    test('the sign-in request is the FIRST same-origin non-GET after submit; GETs before it are not it', async () => {
+    test('with no non-GET after submit, requests made BEFORE the submit stay pre', async () => {
+        const {facts, cdp} = await run({
+            navigations: [landing],
+            onSubmit: [
+                {url: `${BASE}/api/track`, type: 'XHR', status: 200, mimeType: 'application/json'}
+            ],
+            inspect: [wall('/login'), inside('/home')]
+        })
+        expect(facts.authRequest).toBeNull()
+        expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
+            'pre:/',
+            'post:/api/track'
+        ])
+        // No accepted sign-in, so nothing to re-enter with.
+        expect(cdp.navigations()).toBe(1)
+    })
+
+    test('a sign-in that 302s keeps the POST the client made, not the GET it became', async () => {
+        const {verdict, facts, cdp} = await run({
+            navigations: [landing, [me]],
+            onSubmit: [
+                {
+                    url: `${BASE}/login`,
+                    method: 'POST',
+                    redirectTo: `${BASE}/dashboard`,
+                    status: 200
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.authRequest).toEqual({
+            method: 'POST',
+            path: '/login',
+            status: 200,
+            failed: false,
+            redirected: true
+        })
+        expect(verdict.outcome).toBe('pass')
+        expect(cdp.navigations()).toBe(2)
+    })
+
+    test('a fetch sign-in that 302s to a page is not read as the SPA catch-all', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, [me]],
+            onSubmit: [
+                {
+                    url: `${BASE}/login`,
+                    method: 'POST',
+                    type: 'XHR',
+                    redirectTo: `${BASE}/dashboard`,
+                    status: 200,
+                    mimeType: 'text/html'
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.authRequest?.path).toBe('/login')
+        expect(verdict.outcome).toBe('pass')
+    })
+
+    test('a request the submit issues before the sign-in is not post-auth data', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                {url: `${BASE}/csrf`, type: 'XHR', status: 401, mimeType: 'application/json'},
+                loginPost
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
+            'pre:/',
+            'pre:/csrf',
+            'auth:/api/auth/login'
+        ])
+        expect(facts.postAuthDataAttempted).toBe(0)
+        expect(verdict.outcome).not.toBe('fail')
+    })
+
+    test('a request that 302s to a foreign origin and fails there names that origin', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                loginPost,
+                {
+                    url: `${BASE}/api/data`,
+                    type: 'XHR',
+                    redirectTo: 'http://cdn.example.com/api/data',
+                    failed: true
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.foreignOriginFailures).toEqual(['http://cdn.example.com'])
+        expect(facts.postAuthDataAttempted).toBe(0)
+        expect(verdict.outcome).not.toBe('fail')
+    })
+
+    test('a form that autosubmits from the fill still yields its sign-in request', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, [me]],
+            onFill: [{...loginPost, type: 'Document'}],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.authRequest?.path).toBe('/api/auth/login')
+        expect(verdict.outcome).toBe('pass')
+    })
+
+    test('a beacon fired while the form is being filled is not the sign-in request', async () => {
+        const {facts} = await run({
+            navigations: [landing, [me]],
+            onFill: [{url: `${BASE}/api/telemetry`, method: 'POST', type: 'XHR', status: 204}],
+            onSubmit: [loginPost],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.authRequest?.path).toBe('/api/auth/login')
+        expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
+            'pre:/',
+            'pre:/api/telemetry',
+            'auth:/api/auth/login',
+            'post:/api/me'
+        ])
+    })
+
+    test('a foreign request between the sign-in and its data does not shift the phases', async () => {
+        const {facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                loginPost,
+                {url: 'https://fonts.example/x.woff2', type: 'Font', status: 200},
+                me
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
+            'pre:/',
+            'auth:/api/auth/login',
+            'post:/api/me'
+        ])
+        expect(facts.postAuthDataAttempted).toBe(1)
+    })
+
+    test('the sign-in request is the FIRST same-origin non-GET at or after the submit; GETs before it are not it', async () => {
         const {facts} = await run({
             navigations: [landing, []],
             onSubmit: [
@@ -335,12 +494,31 @@ describe('driveSession: signing in', () => {
         })
         expect(facts.authRequest?.path).toBe('/api/session')
         expect(facts.authRequest?.method).toBe('PUT')
+        // csrf precedes the sign-in, so it is 'pre' and not data evidence; the PUT
+        // is the sign-in, not this GET
         expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
             'pre:/',
-            'post:/api/csrf',
+            'pre:/api/csrf',
             'auth:/api/session',
             'post:/api/audit'
         ])
+        expect(facts.postAuthDataAttempted).toBe(1)
+        expect(facts.postAuthData2xx).toBe(1)
+    })
+
+    test('a failed data call the submit issued before the login POST is not the authenticated client', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing],
+            onSubmit: [{url: `${BASE}/api/data`, type: 'XHR', failed: true}, loginPost],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.sessionRequests?.map(s => `${s.phase}:${s.path}`)).toEqual([
+            'pre:/',
+            'pre:/api/data',
+            'auth:/api/auth/login'
+        ])
+        expect(facts.postAuthDataAttempted).toBe(0)
+        expect(verdict.outcome).not.toBe('fail')
     })
 
     test('accepted by the server, redirected straight back to the wall → fail, no re-entry', async () => {
@@ -452,5 +630,151 @@ describe('driveSession: sessions that report on the environment', () => {
         })
         expect(verdict.outcome).toBe('fail')
         expect((verdict as {detail: string}).detail).toContain('got the SPA')
+    })
+
+    test('an unredirected login answered with the SPA shell still FAILS', async () => {
+        const {verdict} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                {
+                    url: `${BASE}/api/auth/login`,
+                    method: 'POST',
+                    type: 'XHR',
+                    status: 200,
+                    mimeType: 'text/html'
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(verdict.outcome).toBe('fail')
+        expect((verdict as {detail: string}).detail).toContain('got the SPA')
+    })
+
+    test('a redirected XHR never reports the first hop with the last hop status', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                {
+                    url: `${BASE}/api/auth/login`,
+                    method: 'POST',
+                    type: 'XHR',
+                    status: 404,
+                    redirectTo: `${BASE}/dashboard`
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.sessionRequests?.find(r => r.path === '/api/auth/login')?.redirected).toBe(
+            true
+        )
+        expect((verdict as {detail?: string}).detail ?? '').not.toContain('does not route')
+    })
+
+    // The fill races the page's own background traffic. A beacon that happens to end
+    // off-origin is not a sign-in, and naming it as one shadows the base-URL note
+    // that actually explains the session.
+    test('a telemetry beacon that ends off-origin is NOT an identity provider', async () => {
+        const {facts} = await run({
+            navigations: [landing, []],
+            onFill: [
+                {
+                    url: `${BASE}/api/telemetry`,
+                    method: 'POST',
+                    type: 'XHR',
+                    status: 200,
+                    redirectTo: 'https://beacon.vendor.io/collect'
+                }
+            ],
+            onSubmit: [],
+            inspect: [wall('/login'), wall('/login')]
+        })
+        expect(facts.signInLeftOrigin).toBeNull()
+    })
+
+    test('a sign-in that leaves for an identity provider names that provider', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                {
+                    url: `${BASE}/login`,
+                    method: 'POST',
+                    type: 'Document',
+                    status: 200,
+                    redirectTo: 'https://idp.example.com/authorize'
+                }
+            ],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(facts.signInLeftOrigin).toBe('https://idp.example.com')
+        expect(verdict.outcome).toBe('skip')
+        expect((verdict as {note: string}).note).toContain('https://idp.example.com')
+    })
+})
+
+// Regressions from the 0.40.39 review. Each one is driven through `driveSession`
+// rather than a hand-built fact set: the first two were already "covered" by tests
+// that assembled a shape the driver cannot produce.
+describe('driveSession: redirects the URL pair cannot see', () => {
+    test('a sign-in that 302s back to the SAME url is still a redirect → skip, not fail', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing],
+            onSubmit: [
+                {
+                    url: `${BASE}/login`,
+                    method: 'POST',
+                    type: 'Document',
+                    redirectTo: `${BASE}/login`,
+                    status: 200,
+                    mimeType: 'text/html'
+                }
+            ],
+            inspect: [wall('/login'), wall('/login')]
+        })
+        expect(facts.authRequest?.redirected).toBe(true)
+        expect(verdict.outcome).toBe('skip')
+        expect((verdict as {note: string}).note).toContain('redirected')
+    })
+
+    test('a post-auth XHR bounced to the login page names the hop, not a missing route', async () => {
+        const {verdict} = await run({
+            navigations: [
+                landing,
+                [
+                    {
+                        url: `${BASE}/api/me`,
+                        type: 'XHR',
+                        redirectTo: `${BASE}/login`,
+                        status: 200,
+                        mimeType: 'text/html'
+                    }
+                ]
+            ],
+            onSubmit: [loginPost],
+            inspect: [wall('/login'), inside('/dashboard')]
+        })
+        expect(verdict.outcome).toBe('fail')
+        const detail = (verdict as {detail: string}).detail
+        expect(detail).toContain('→ `/login`')
+        expect(detail).not.toContain('route is not mounted')
+    })
+
+    test('an XHR sign-in that 302s off-origin names the provider, not "no request to our origin"', async () => {
+        const {verdict, facts} = await run({
+            navigations: [landing, []],
+            onSubmit: [
+                {
+                    url: `${BASE}/api/login`,
+                    method: 'POST',
+                    type: 'XHR',
+                    redirectTo: 'https://idp.example.com/authorize',
+                    status: 200
+                }
+            ],
+            inspect: [wall('/login'), wall('/login')]
+        })
+        expect(facts.signInLeftOrigin).toBe('https://idp.example.com')
+        expect((verdict as {note: string}).note).not.toContain(
+            "issued no request to the app's own origin"
+        )
     })
 })
