@@ -9,24 +9,6 @@
 [![npm](https://img.shields.io/npm/v/@mjasnikovs/pi-task?color=cb3837&logo=npm)](https://www.npmjs.com/package/@mjasnikovs/pi-task)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![pi extension](https://img.shields.io/badge/pi-extension-7c3aed)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
-[![tests](https://img.shields.io/badge/tests-4631%20passing-3fb950)](#development)
-[![types](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
-
-</div>
-
----
-
-<div align="center">
-
-![pi-task — Deterministic Local AI Workflows. Every request runs a fixed pipeline: refine to clarify and structure it, research to gather information in parallel, grill to cross-examine the findings, compose to write the implementation spec, critique to check it for quality and completeness.](https://raw.githubusercontent.com/mjasnikovs/pi-task/main/assets/hero.svg)
-
-# pi-task
-
-**Deterministic spec-orchestration for local models — with bundled web, docs, fetch, and worker sub-agent tools.**
-
-[![npm](https://img.shields.io/npm/v/@mjasnikovs/pi-task?color=cb3837&logo=npm)](https://www.npmjs.com/package/@mjasnikovs/pi-task)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
-[![pi extension](https://img.shields.io/badge/pi-extension-7c3aed)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 [![tests](https://img.shields.io/badge/tests-4280%20passing-3fb950)](#development)
 [![types](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 
@@ -38,7 +20,7 @@
 
 <div align="center">
 
-![pi-task remote UI — Material 3 mobile-first interface with session sidebar, chat bubbles, code blocks, thinking cards, tool cards, command suggestions, and theme picker](./assets/remote-ui-preview.png)
+<img src="./assets/remote-ui-preview.png" alt="pi-task remote UI — Material 3 mobile-first interface with session sidebar, chat bubbles, code blocks, thinking cards, tool cards, command suggestions, and theme picker" height="400">
 
 **Material 3 / mdui-based mobile-first remote UI (v0.40.18+)**
 
