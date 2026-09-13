@@ -1822,6 +1822,17 @@ function stage0Logic(wsUrl: string): string {
           filled:  { viewBox: VB, path: iconPaths[name][1] }
         });
       }
+      /* m3e-icon's own catch-up (registry observer) is lost whenever an
+         unregistered icon is disconnected even once - the nav-menu-item
+         re-slotting its light DOM on upgrade does exactly that. Re-set the
+         name attribute on every icon to force a re-render now that the
+         paths are in; anything created after this point resolves directly. */
+      document.querySelectorAll('m3e-icon[name]').forEach(el => {
+        const n = el.getAttribute('name');
+        if (!n) return;
+        el.removeAttribute('name');
+        el.setAttribute('name', n);
+      });
     }).catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/icon-button').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/button').catch(() => {});
