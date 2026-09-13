@@ -2216,7 +2216,12 @@ function stage0Logic(wsUrl: string): string {
       return bub;
     }
     function appendTextDelta(delta) {
+      streamText += delta;
       if (!currentBubble) {
+        // Models emit whitespace-only text parts around tool calls; a bubble
+        // for them renders as an empty min-height blob, so hold off until
+        // real (non-whitespace) text arrives.
+        if (!streamText.trim()) return;
         const wrap = document.createElement('div');
         wrap.className = 'msg assistant';
         const av = makeAvatar('assistant');
@@ -2225,16 +2230,21 @@ function stage0Logic(wsUrl: string): string {
         wrap.appendChild(av); wrap.appendChild(bub);
         chatLog.appendChild(wrap);
         currentBubble = bub;
-        streamText = '';
       }
-      streamText += delta;
       currentBubble.textContent = streamText;
       scrollBottom();
     }
     function closeBubble() {
-      if (currentBubble && streamText) {
-        mountMarkdown(currentBubble, streamText);
-        attachBubbleCopy(currentBubble, streamText);
+      if (currentBubble) {
+        if (streamText.trim()) {
+          mountMarkdown(currentBubble, streamText);
+          attachBubbleCopy(currentBubble, streamText);
+        } else {
+          // Whitespace-only turn: the placeholder row would linger as an
+          // empty bubble — remove it entirely.
+          const wrap = currentBubble.closest('.msg') || currentBubble.parentNode;
+          if (wrap) wrap.remove();
+        }
       }
       currentBubble = null; streamText = '';
     }
@@ -3235,31 +3245,25 @@ function stage0Logic(wsUrl: string): string {
           break;
         case 'text_delta':
           turnHadContent = true;
-          if (!currentBubble) {
-            finalizeThinking();
-            // Same .msg row + shape avatar as every other assistant bubble —
-            // a bare bubble renders with no avatar and full column width.
-            const wrap = document.createElement('div');
-            wrap.className = 'msg assistant';
-            wrap.appendChild(makeAvatar('assistant'));
-            currentBubble = document.createElement('div');
-            currentBubble.className = 'bubble md';
-            wrap.appendChild(currentBubble);
-            chatLog.appendChild(wrap);
-            streamText = '';
-          }
-          streamText += m.delta;
-          currentBubble.textContent = streamText;
-          scrollBottom();
+          // finalizeThinking only when this delta actually births the bubble
+          // (whitespace-only deltas defer it — appendTextDelta decides).
+          if (!currentBubble && (streamText + m.delta).trim()) finalizeThinking();
+          appendTextDelta(m.delta);
           break;
         case 'text_end':
           if (currentBubble) {
-            if (streamText) {
+            const hadText = streamText.trim();
+            // Same mount-or-remove decision as closeBubble: a whitespace-only
+            // stream must not leave an empty bubble behind.
+            if (hadText) {
               mountMarkdown(currentBubble, streamText);
               attachBubbleCopy(currentBubble, streamText);
               /* Rendered markdown is usually taller than the streamed plain
                  text: re-jump so the final layout still sits at the bottom. */
               scrollBottom();
+            } else {
+              const wrap = currentBubble.closest('.msg') || currentBubble.parentNode;
+              if (wrap) wrap.remove();
             }
             currentBubble = null; streamText = '';
           }
@@ -3357,7 +3361,7 @@ function stage0Logic(wsUrl: string): string {
       if (t.role === 'user') { addBubble('user', t.text); addTurnTime(t.ts, 'user'); return; }
       for (const p of (t.parts || [])) {
         if (p.kind === 'text') {
-          if (p.text) addBubble('assistant', p.text);
+          if (p.text.trim()) addBubble('assistant', p.text);
         } else if (p.kind === 'thinking') {
           if (p.text) makeThinkingEl(p.text, false);
         } else {
@@ -3399,7 +3403,7 @@ function stage0Logic(wsUrl: string): string {
             wrap.appendChild(currentBubble);
             chatLog.appendChild(wrap);
             scrollBottom();
-          } else if (p.text) {
+          } else if (p.text.trim()) {
             addBubble('assistant', p.text);
           }
         } else if (p.kind === 'thinking') {
