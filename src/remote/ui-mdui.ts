@@ -428,7 +428,6 @@ html, body {
     display: block;
     width: 100%;
     z-index: 29;
-    --md-sys-color-primary: var(--md-sys-color-primary);
     --md-sys-color-secondary-container: var(--md-sys-color-surface-container-highest);
 }
 #ctx-stack.hot { --md-sys-color-primary: var(--md-sys-color-error); }
@@ -546,11 +545,17 @@ m3e-app-bar#top-bar {
        still caps at exactly 2 × radius. */
     min-width: calc(2 * var(--_code-r) - 1.5rem);
 }
-.msg.assistant .bubble {
+.msg.assistant .bubble, .msg.error .bubble {
     /* The one tail corner, pointing at the avatar side. The top-right keeps
        the bubble's concentric elliptical pair — the floating copy circle
        buffers inside that arc (see .bubble-copy). */
     border-top-left-radius: 0.5rem;
+}
+.msg.error .bubble {
+    /* Same shape as an assistant bubble, tinted toward the error palette
+       (matching the tool-call error mix) so it reads as an error at a
+       glance while staying on-voice with the rest of the chat. */
+    background: color-mix(in srgb, var(--md-sys-color-error-container) 35%, var(--md-sys-color-surface-container-high));
 }
 
 /* Markdown surface (Stage 1) */
@@ -1427,7 +1432,7 @@ m3e-fab#scroll-bottom.show:active { transform: scale(0.92) rotate(0deg); }
     opacity: 0;
     transition: opacity 0.15s;
 }
-.msg.assistant:hover .bubble-copy { opacity: 1; }
+.msg.assistant:hover .bubble-copy, .msg.error:hover .bubble-copy { opacity: 1; }
 /* Touch devices have no hover — keep the button faintly visible. */
 @media (hover: none) { .bubble-copy { opacity: 0.55; } }
 
@@ -2171,8 +2176,9 @@ function stage0Logic(wsUrl: string): string {
         b.replaceWith(btn);
       });
     }
-    // User stays a plain circle; pi (and errors) wear the M3 Expressive
-    // flower from @m3e/web's shape library.
+    // User stays a plain circle; pi wears the M3 Expressive flower from
+    // @m3e/web's shape library. Errors keep the error palette but drop the
+    // flower for a plain circle, so they read as a system voice, not pi.
     function makeAvatar(role) {
       const icon = role === 'user'
         ? '<m3e-icon name="person"></m3e-icon>'
@@ -2180,7 +2186,8 @@ function stage0Logic(wsUrl: string): string {
           ? '<m3e-icon name="error_outline"></m3e-icon>'
           : '<m3e-icon name="auto_awesome"></m3e-icon>';
       const s = document.createElement('m3e-shape');
-      s.name = role === 'user' ? 'arch' : '4-leaf-clover';
+      s.name = role === 'user' ? 'arch'
+        : role === 'error' ? 'circle' : '4-leaf-clover';
       s.className = 'avatar';
       const fill = document.createElement('div');
       fill.className = 'avatar-fill'
@@ -2195,7 +2202,7 @@ function stage0Logic(wsUrl: string): string {
       const avatar = makeAvatar(role);
       const bub = document.createElement('div');
       bub.className = 'bubble';
-      if (role === 'assistant') {
+      if (role === 'assistant' || role === 'error') {
         bub.classList.add('md');
         mountMarkdown(bub, text);
         attachBubbleCopy(bub, text);
